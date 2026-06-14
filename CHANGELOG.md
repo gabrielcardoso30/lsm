@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-06-14
+
+### Fixed
+
+- Summary cards now align correctly in Brazilian Portuguese and Spanish.
+  Two underlying bugs:
+  - `printf "%-Ns"` pads by bytes on glibc, not characters, so labels with
+    accented chars (`Parâmetros`, `Tamanho`, `Tamaño`) drifted. `pad_right`
+    now uses `${#var}` (UTF-8-aware) plus `%s%*s` for exact visual padding.
+  - The label-to-colon spacing was hard-coded for English label widths.
+    The card lines now compute the widest label per column at startup and
+    pad each label dynamically via the new `pad_label` helper.
+
 ## [0.2.0] — 2026-06-14
 
 ### Added
@@ -67,6 +80,7 @@ v1.0 implementation (or v2 rewrite) must honor — see ADR-0002.
   tables), `0004` (bats + shellcheck as the quality bar).
 - Glossary seeded with core domain terms.
 
-[Unreleased]: https://github.com/gabrielcardoso30/lsm/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/gabrielcardoso30/lsm/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/gabrielcardoso30/lsm/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/gabrielcardoso30/lsm/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gabrielcardoso30/lsm/releases/tag/v0.1.0

@@ -1,11 +1,143 @@
 #!/usr/bin/env bash
+#
+# lsm — modern directory listing with summary cards.
+# https://github.com/gabrielcardoso30/lsm
+#
+# Requires: bash 4+, find, awk, column, tput, realpath.
 
+set -eu
+# pipefail is intentionally NOT set: the `find | sort | head` pipeline below
+# causes SIGPIPE in sort when --top truncates, which pipefail would surface as
+# a fatal error. We still rely on `set -eu` plus explicit `mktemp`/`trap` for
+# safety.
 export LC_ALL=C.UTF-8
+
+# ---------------------------------------------------------------------------
+# i18n (see docs/adr/0003-i18n-with-message-tables.md)
+# ---------------------------------------------------------------------------
+
+declare -A MSG_EN MSG_PT MSG_ES
+
+MSG_EN=(
+  [subtitle]="Lists items in the directory with sorting and display limits"
+  [directory]="Directory:"
+  [summary]="Summary"
+  [available_flags]="Available flags"
+  [current_flags]="Current flags"
+  [shown]="Shown"
+  [items]="Items"
+  [files]="Files"
+  [folders]="Folders"
+  [size]="Size"
+  [sort]="Sort"
+  [top]="Top"
+  [color]="Color"
+  [on]="on"
+  [off]="off"
+  [all]="all"
+  [tbl_file]="FILE"
+  [tbl_modified]="MODIFIED AT"
+  [tbl_size]="SIZE"
+  [error]="Error:"
+  [invalid_option]="Invalid option"
+  [invalid_directory]="invalid directory"
+  [invalid_sort]="invalid value for --sort"
+  [accepted_values]="Accepted values"
+  [invalid_top]="--top value must be numeric"
+  [column_missing]="the 'column' command was not found"
+)
+
+MSG_PT=(
+  [subtitle]="Lista itens do diretório com ordenação e limite de exibição"
+  [directory]="Diretório:"
+  [summary]="Resumo"
+  [available_flags]="Parâmetros disponíveis"
+  [current_flags]="Parâmetros atuais"
+  [shown]="Exibidos"
+  [items]="Itens"
+  [files]="Arquivos"
+  [folders]="Pastas"
+  [size]="Tamanho"
+  [sort]="Ordenação"
+  [top]="Limite"
+  [color]="Cor"
+  [on]="ligada"
+  [off]="desligada"
+  [all]="todos"
+  [tbl_file]="ARQUIVO"
+  [tbl_modified]="MODIFICADO EM"
+  [tbl_size]="TAMANHO"
+  [error]="Erro:"
+  [invalid_option]="Opção inválida"
+  [invalid_directory]="diretório inválido"
+  [invalid_sort]="valor inválido para --sort"
+  [accepted_values]="Valores aceitos"
+  [invalid_top]="o valor de --top deve ser numérico"
+  [column_missing]="o comando 'column' não foi encontrado"
+)
+
+MSG_ES=(
+  [subtitle]="Lista los elementos del directorio con ordenación y límite de visualización"
+  [directory]="Directorio:"
+  [summary]="Resumen"
+  [available_flags]="Parámetros disponibles"
+  [current_flags]="Parámetros actuales"
+  [shown]="Mostrados"
+  [items]="Elementos"
+  [files]="Archivos"
+  [folders]="Carpetas"
+  [size]="Tamaño"
+  [sort]="Orden"
+  [top]="Límite"
+  [color]="Color"
+  [on]="activado"
+  [off]="desactivado"
+  [all]="todos"
+  [tbl_file]="ARCHIVO"
+  [tbl_modified]="MODIFICADO"
+  [tbl_size]="TAMAÑO"
+  [error]="Error:"
+  [invalid_option]="Opción inválida"
+  [invalid_directory]="directorio inválido"
+  [invalid_sort]="valor inválido para --sort"
+  [accepted_values]="Valores aceptados"
+  [invalid_top]="el valor de --top debe ser numérico"
+  [column_missing]="el comando 'column' no se encontró"
+)
+
+LSM_ACTIVE_LANG="en"
+
+normalize_lang() {
+  case "$1" in
+    en|en_*|EN*) printf "en" ;;
+    pt|pt_*|PT*) printf "pt" ;;
+    es|es_*|ES*) printf "es" ;;
+    *)           printf "en" ;;
+  esac
+}
+
+t() {
+  local key="$1"
+  local val=""
+  case "$LSM_ACTIVE_LANG" in
+    pt) val="${MSG_PT[$key]:-}" ;;
+    es) val="${MSG_ES[$key]:-}" ;;
+    *)  val="${MSG_EN[$key]:-}" ;;
+  esac
+  [[ -z "$val" ]] && val="${MSG_EN[$key]:-$key}"
+  printf '%s' "$val"
+}
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
 
 DIR="."
 SORT_BY="time"
 TOP_N=""
 USE_COLOR=1
+SHOW_ALL=0
+LANG_FLAG=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -17,12 +149,26 @@ while [[ $# -gt 0 ]]; do
       TOP_N="${2:-}"
       shift 2
       ;;
+    --lang)
+      LANG_FLAG="${2:-}"
+      shift 2
+      ;;
+    --all|-a)
+      SHOW_ALL=1
+      shift
+      ;;
     --no-color)
       USE_COLOR=0
       shift
       ;;
+    --)
+      shift
+      if [[ $# -gt 0 ]]; then DIR="$1"; shift; fi
+      ;;
     -*)
-      printf "Opção inválida: %s\n" "$1"
+      # Defer translation; we set the language before any user-facing output.
+      LSM_ACTIVE_LANG="$(normalize_lang "${LSM_LANG:-${LANG:-en}}")"
+      printf "\033[1;31m%s\033[0m %s: %s\n" "$(t error)" "$(t invalid_option)" "$1" >&2
       exit 1
       ;;
     *)
@@ -32,166 +178,196 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [ ! -d "$DIR" ]; then
-  printf "\033[1;31mErro:\033[0m diretório inválido: %s\n" "$DIR"
+# Resolve active language: --lang > LSM_LANG > LANG/LC_ALL > en (AC-16e).
+if [[ -n "$LANG_FLAG" ]]; then
+  LSM_ACTIVE_LANG="$(normalize_lang "$LANG_FLAG")"
+elif [[ -n "${LSM_LANG:-}" ]]; then
+  LSM_ACTIVE_LANG="$(normalize_lang "$LSM_LANG")"
+elif [[ -n "${LANG:-}" ]]; then
+  LSM_ACTIVE_LANG="$(normalize_lang "$LANG")"
+else
+  LSM_ACTIVE_LANG="en"
+fi
+
+# ---------------------------------------------------------------------------
+# Validation
+# ---------------------------------------------------------------------------
+
+if [[ ! -d "$DIR" ]]; then
+  printf "\033[1;31m%s\033[0m %s: %s\n" "$(t error)" "$(t invalid_directory)" "$DIR" >&2
   exit 1
 fi
 
 if ! command -v column >/dev/null 2>&1; then
-  printf "\033[1;31mErro:\033[0m o comando 'column' não foi encontrado.\n"
+  printf "\033[1;31m%s\033[0m %s.\n" "$(t error)" "$(t column_missing)" >&2
   exit 1
 fi
 
 case "$SORT_BY" in
-  time) SORT_CMD="sort -t'|' -nrk1,1" ;;
-  name) SORT_CMD="sort -t'|' -k2,2f" ;;
-  size) SORT_CMD="sort -t'|' -nrk4,4" ;;
+  time|name|size) ;;
   *)
-    printf "\033[1;31mErro:\033[0m valor inválido para --sort: %s\n" "$SORT_BY"
-    printf "Valores aceitos: time, name, size\n"
+    printf "\033[1;31m%s\033[0m %s: %s\n" "$(t error)" "$(t invalid_sort)" "$SORT_BY" >&2
+    printf "%s: time, name, size\n" "$(t accepted_values)" >&2
     exit 1
     ;;
 esac
 
 if [[ -n "$TOP_N" && ! "$TOP_N" =~ ^[0-9]+$ ]]; then
-  printf "\033[1;31mErro:\033[0m o valor de --top deve ser numérico.\n"
+  printf "\033[1;31m%s\033[0m %s.\n" "$(t error)" "$(t invalid_top)" >&2
   exit 1
 fi
 
-REAL_DIR="$(realpath "$DIR" 2>/dev/null || echo "$DIR")"
+REAL_DIR="$(realpath "$DIR" 2>/dev/null || printf '%s' "$DIR")"
 
-TOTAL_ARQUIVOS=$(find "$DIR" -maxdepth 1 -type f | wc -l)
-TOTAL_PASTAS=$(find "$DIR" -maxdepth 1 -mindepth 1 -type d | wc -l)
+# ---------------------------------------------------------------------------
+# Inventory: count entries respecting --all
+# ---------------------------------------------------------------------------
+
+if [[ $SHOW_ALL -eq 1 ]]; then
+  FIND_HIDDEN_FILTER=()
+else
+  FIND_HIDDEN_FILTER=(! -name '.*')
+fi
+
+TOTAL_ARQUIVOS=$(find "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" -printf 'x\n' 2>/dev/null | wc -l)
+TOTAL_PASTAS=$(find "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" -printf 'x\n' 2>/dev/null | wc -l)
 TOTAL_ITENS=$((TOTAL_ARQUIVOS + TOTAL_PASTAS))
+
+# ---------------------------------------------------------------------------
+# Collect rows, sort, optional top, render via awk
+# ---------------------------------------------------------------------------
+
+# Sort key fields in the intermediate record (pipe-separated):
+#   1: kind (f|d)
+#   2: mtime (epoch float)
+#   3: name
+#   4: pretty mtime (YYYY-MM-DD HH:MM:SS)
+#   5: bytes (-1 for directories so they sort last on --sort size)
+
+case "$SORT_BY" in
+  time) SORT_ARGS=(-t'|' -nrk2,2) ;;
+  name) SORT_ARGS=(-t'|' -k3,3f) ;;
+  size) SORT_ARGS=(-t'|' -nrk5,5) ;;
+esac
 
 SEP_IN=$'\t'
 SEP_OUT=$'\x1f'
-TMP_FILE=$(mktemp)
+TMP_FILE="$(mktemp)"
 trap 'rm -f "$TMP_FILE"' EXIT
 
-find "$DIR" -maxdepth 1 -type f -printf '%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%s\n' 2>/dev/null \
-| eval "$SORT_CMD" \
-| {
-    if [[ -n "$TOP_N" ]]; then
-      head -n "$TOP_N"
-    else
-      cat
-    fi
-  } \
-| awk -F'|' '
-    BEGIN {
-      total_bytes = 0
-    }
+{
+  find "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" \
+    -printf 'f|%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%s\n' 2>/dev/null
+  find "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" \
+    -printf 'd|%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|-1\n' 2>/dev/null
+} \
+| sort "${SORT_ARGS[@]}" \
+| { if [[ -n "$TOP_N" ]]; then head -n "$TOP_N"; else cat; fi; } \
+| awk -F'|' -v sep="$SEP_IN" '
+    BEGIN { total_bytes = 0; linhas = 0 }
     {
-      nome = $2
+      kind = $1
+      nome = $3
       gsub(/\t/, " ", nome)
-
-      split($3, dt, "\\.")
+      split($4, dt, "\\.")
       data = dt[1]
 
-      bytes = $4 + 0
-      total_bytes += bytes
-
-      if (bytes >= 1024*1024*1024) {
-        tamanho = sprintf("%.2f GB", bytes / 1024 / 1024 / 1024)
-      } else if (bytes >= 1024*1024) {
-        tamanho = sprintf("%.2f MB", bytes / 1024 / 1024)
-      } else if (bytes >= 1024) {
-        tamanho = sprintf("%.2f KB", bytes / 1024)
+      if (kind == "d") {
+        nome = nome "/"
+        tamanho = "-"
       } else {
-        tamanho = sprintf("%d B", bytes)
+        bytes = $5 + 0
+        total_bytes += bytes
+        if (bytes >= 1024*1024*1024)      tamanho = sprintf("%.2f GB", bytes/1024/1024/1024)
+        else if (bytes >= 1024*1024)      tamanho = sprintf("%.2f MB", bytes/1024/1024)
+        else if (bytes >= 1024)           tamanho = sprintf("%.2f KB", bytes/1024)
+        else                              tamanho = sprintf("%d B", bytes)
       }
 
-      print nome "\t" data "\t" tamanho
+      printf "%s%s%s%s%s%s%s\n", kind, sep, nome, sep, data, sep, tamanho
       linhas++
     }
-    END {
-      printf "__SUMMARY__\t%d\t%d\n", linhas, total_bytes
-    }
+    END { printf "__SUMMARY__%s%d%s%d\n", sep, linhas, sep, total_bytes }
   ' > "$TMP_FILE"
 
-EXIBIDOS=$(awk -F'\t' '$1=="__SUMMARY__" {print $2}' "$TMP_FILE")
-TOTAL_BYTES_EXIBIDOS=$(awk -F'\t' '$1=="__SUMMARY__" {print $3}' "$TMP_FILE")
-
-if [[ -z "$EXIBIDOS" ]]; then
-  EXIBIDOS=0
-fi
+EXIBIDOS=$(awk -F"$SEP_IN" '$1=="__SUMMARY__" {print $2}' "$TMP_FILE")
+TOTAL_BYTES_EXIBIDOS=$(awk -F"$SEP_IN" '$1=="__SUMMARY__" {print $3}' "$TMP_FILE")
+[[ -z "$EXIBIDOS" ]] && EXIBIDOS=0
+[[ -z "$TOTAL_BYTES_EXIBIDOS" ]] && TOTAL_BYTES_EXIBIDOS=0
 
 format_bytes_human() {
-  local bytes="$1"
-  awk -v bytes="$bytes" '
+  awk -v bytes="$1" '
     BEGIN {
-      if (bytes >= 1024*1024*1024) {
-        printf "%.2f GB", bytes / 1024 / 1024 / 1024
-      } else if (bytes >= 1024*1024) {
-        printf "%.2f MB", bytes / 1024 / 1024
-      } else if (bytes >= 1024) {
-        printf "%.2f KB", bytes / 1024
-      } else {
-        printf "%d B", bytes
-      }
-    }
-  '
+      if (bytes >= 1024*1024*1024)      printf "%.2f GB", bytes/1024/1024/1024
+      else if (bytes >= 1024*1024)      printf "%.2f MB", bytes/1024/1024
+      else if (bytes >= 1024)           printf "%.2f KB", bytes/1024
+      else                              printf "%d B", bytes
+    }'
 }
 
-TOTAL_EXIBIDO_HUMAN=$(format_bytes_human "$TOTAL_BYTES_EXIBIDOS")
+TOTAL_EXIBIDO_HUMAN="$(format_bytes_human "$TOTAL_BYTES_EXIBIDOS")"
 
-if [[ "$USE_COLOR" -eq 1 ]]; then
-  C_TITULO="\033[1;36m"
+# ---------------------------------------------------------------------------
+# Colors and layout
+# ---------------------------------------------------------------------------
+
+if [[ $USE_COLOR -eq 1 ]]; then
   C_LABEL="\033[0;37m"
-  C_ARQ="\033[1;33m"
-  C_DATA="\033[1;32m"
-  C_SIZE="\033[1;35m"
-  C_BG1=""
-  C_BG2="\033[48;5;236m"
   C_RESET="\033[0m"
-
   CARD_BORDER_COLOR="\033[38;5;250m"
   CARD_TITLE_COLOR="\033[1;97m"
   CARD_TITLE_BG="\033[48;5;238m"
   CARD_COL1_COLOR="\033[38;5;229m"
   CARD_COL2_COLOR="\033[38;5;121m"
   CARD_COL3_COLOR="\033[38;5;225m"
+  HEADER_LINE_COLOR="\033[38;5;238m"
+  HEADER_TITLE_COLOR="\033[1;96m"
+  HEADER_PATH_COLOR="\033[1;37m"
+  DIR_COLOR="\033[38;5;75m"
+  FILE_COLOR="\033[1;33m"
+  DATE_COLOR="\033[1;32m"
+  SIZE_COLOR="\033[1;35m"
+  ROW_BG_ALT="\033[48;5;236m"
 else
-  C_TITULO=""
-  C_LABEL=""
-  C_ARQ=""
-  C_DATA=""
-  C_SIZE=""
-  C_BG1=""
-  C_BG2=""
-  C_RESET=""
-
-  CARD_BORDER_COLOR=""
-  CARD_TITLE_COLOR=""
-  CARD_TITLE_BG=""
-  CARD_COL1_COLOR=""
-  CARD_COL2_COLOR=""
-  CARD_COL3_COLOR=""
+  C_LABEL=""; C_RESET=""
+  CARD_BORDER_COLOR=""; CARD_TITLE_COLOR=""; CARD_TITLE_BG=""
+  CARD_COL1_COLOR=""; CARD_COL2_COLOR=""; CARD_COL3_COLOR=""
+  HEADER_LINE_COLOR=""; HEADER_TITLE_COLOR=""; HEADER_PATH_COLOR=""
+  DIR_COLOR=""; FILE_COLOR=""; DATE_COLOR=""; SIZE_COLOR=""; ROW_BG_ALT=""
 fi
 
 repeat_char() {
-  local char="$1"
-  local count="$2"
-  printf "%*s" "$count" "" | tr " " "$char"
+  printf "%*s" "$2" "" | tr " " "$1"
 }
 
 pad_right() {
-  local text="$1"
-  local width="$2"
-
-  if [ "${#text}" -gt "$width" ]; then
+  local text="$1" width="$2"
+  if [[ "${#text}" -gt "$width" ]]; then
     printf "%s..." "${text:0:$((width-3))}"
   else
     printf "%-${width}s" "$text"
   fi
 }
 
-print_card_separator_3() {
-  local w="$1"
-  local sep
-  sep="$(repeat_char "-" "$w")"
+# COLUMNS wins over tput so tests and pipes get deterministic layout.
+TERM_WIDTH="${COLUMNS:-$(tput cols 2>/dev/null || printf 120)}"
+MIN_WIDTH_3COL=110
 
+LINE="$(repeat_char '-' "$TERM_WIDTH")"
+
+printf "%b%s%b\n" "$HEADER_LINE_COLOR" "$LINE" "$C_RESET"
+printf "%b %s%b %b|%b %b%s%b\n" \
+  "$HEADER_TITLE_COLOR" "LSM" "$C_RESET" \
+  "$HEADER_LINE_COLOR" "$C_RESET" \
+  "$HEADER_TITLE_COLOR" "$(t subtitle)" "$C_RESET"
+printf "%b %s%b %b%s%b\n" \
+  "$C_LABEL" "$(t directory)" "$C_RESET" \
+  "$HEADER_PATH_COLOR" "$REAL_DIR" "$C_RESET"
+printf "%b%s%b\n\n" "$HEADER_LINE_COLOR" "$LINE" "$C_RESET"
+
+print_card_separator_3() {
+  local w="$1" sep
+  sep="$(repeat_char '-' "$w")"
   printf "%b|-%s-|%b  %b|-%s-|%b  %b|-%s-|%b\n" \
     "$CARD_BORDER_COLOR" "$sep" "$C_RESET" \
     "$CARD_BORDER_COLOR" "$sep" "$C_RESET" \
@@ -199,49 +375,18 @@ print_card_separator_3() {
 }
 
 print_card_line_3() {
-  local c1="$1"
-  local c2="$2"
-  local c3="$3"
-  local w="$4"
-
+  local c1="$1" c2="$2" c3="$3" w="$4"
   printf "%b| %b%s%b %b|%b  %b| %b%s%b %b|%b  %b| %b%s%b %b|%b\n" \
     "$CARD_BORDER_COLOR" "$CARD_COL1_COLOR" "$(pad_right "$c1" "$w")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
     "$CARD_BORDER_COLOR" "$CARD_COL2_COLOR" "$(pad_right "$c2" "$w")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
     "$CARD_BORDER_COLOR" "$CARD_COL3_COLOR" "$(pad_right "$c3" "$w")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET"
 }
 
-TERM_WIDTH=$(tput cols 2>/dev/null || echo 120)
-MIN_WIDTH_3COL=110
+color_label() { [[ $USE_COLOR -eq 1 ]] && t on || t off; }
 
-draw_line() {
-  local char="$1"
-  local width="$2"
-  printf "%*s\n" "$width" "" | tr " " "$char"
-}
-
-LINE_CHAR="-"
-LINE=$(printf "%*s" "$TERM_WIDTH" "" | tr " " "$LINE_CHAR")
-
-HEADER_LINE_COLOR="\033[38;5;238m"   # cinza discreto
-HEADER_TITLE_COLOR="\033[1;96m"      # ciano forte
-HEADER_PATH_COLOR="\033[1;37m"       # branco forte
-
-printf "%b%s%b\n" "$HEADER_LINE_COLOR" "$LINE" "$C_RESET"
-
-printf "%b LSM%b %b|%b %bLista itens do diretório com ordenação e limite de exibição%b\n" \
-  "$HEADER_TITLE_COLOR" "$C_RESET" \
-  "$HEADER_LINE_COLOR" "$C_RESET" \
-  "$HEADER_TITLE_COLOR" "$C_RESET"
-
-printf "%b Diretorio:%b %b%s%b\n" \
-  "$C_LABEL" "$C_RESET" \
-  "$HEADER_PATH_COLOR" "$REAL_DIR" "$C_RESET"
-
-printf "%b%s%b\n\n" "$HEADER_LINE_COLOR" "$LINE" "$C_RESET"
-
-if [ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]; then
+if [[ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]]; then
   CARD_INNER_WIDTH=30
-  CARD_BORDER="+-$(repeat_char "-" "$CARD_INNER_WIDTH")-+"
+  CARD_BORDER="+-$(repeat_char '-' "$CARD_INNER_WIDTH")-+"
 
   printf "%b%s%b  %b%s%b  %b%s%b\n" \
     "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
@@ -249,79 +394,74 @@ if [ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]; then
     "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET"
 
   printf "%b| %b%b%s%b %b|%b  %b| %b%b%s%b %b|%b  %b| %b%b%s%b %b|%b\n" \
-    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "Resumo" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
-    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "Parametros disponiveis" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
-    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "Parametros atuais" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET"
+    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "$(t summary)" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "$(t available_flags)" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "$(t current_flags)" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET"
 
   print_card_separator_3 "$CARD_INNER_WIDTH"
 
-  print_card_line_3 "Exibidos : $EXIBIDOS" "--sort [time|name|size]" "Sort  : $SORT_BY" "$CARD_INNER_WIDTH"
-  print_card_line_3 "Itens    : $TOTAL_ITENS" "--top N" "Top   : ${TOP_N:-todos}" "$CARD_INNER_WIDTH"
-  print_card_line_3 "Arquivos : $TOTAL_ARQUIVOS" "--no-color" "Cores : $([[ "$USE_COLOR" -eq 1 ]] && echo "on" || echo "off")" "$CARD_INNER_WIDTH"
-  print_card_line_3 "Pastas   : $TOTAL_PASTAS" "" "" "$CARD_INNER_WIDTH"
-  print_card_line_3 "Tamanho  : $TOTAL_EXIBIDO_HUMAN" "" "" "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(t shown)    : $EXIBIDOS"          "--sort [time|name|size]"   "$(t sort)  : $SORT_BY"                     "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(t items)    : $TOTAL_ITENS"       "--top N"                   "$(t top)   : ${TOP_N:-$(t all)}"           "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(t files)    : $TOTAL_ARQUIVOS"    "--all / -a"                "$(t color) : $(color_label)"               "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(t folders)  : $TOTAL_PASTAS"      "--no-color"                ""                                          "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(t size)     : $TOTAL_EXIBIDO_HUMAN" "--lang en|pt|es"         ""                                          "$CARD_INNER_WIDTH"
 
   printf "%b%s%b  %b%s%b  %b%s%b\n\n" \
     "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
     "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
     "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET"
 else
-  printf "%bResumo%b\n" "$C_LABEL" "$C_RESET"
-  printf "  Exibidos : %s\n" "$EXIBIDOS"
-  printf "  Itens    : %s\n" "$TOTAL_ITENS"
-  printf "  Arquivos : %s\n" "$TOTAL_ARQUIVOS"
-  printf "  Pastas   : %s\n" "$TOTAL_PASTAS"
-  printf "  Tamanho  : %s\n\n" "$TOTAL_EXIBIDO_HUMAN"
+  printf "%b%s%b\n" "$C_LABEL" "$(t summary)" "$C_RESET"
+  printf "  %s : %s\n"     "$(t shown)"   "$EXIBIDOS"
+  printf "  %s : %s\n"     "$(t items)"   "$TOTAL_ITENS"
+  printf "  %s : %s\n"     "$(t files)"   "$TOTAL_ARQUIVOS"
+  printf "  %s : %s\n"     "$(t folders)" "$TOTAL_PASTAS"
+  printf "  %s : %s\n\n"   "$(t size)"    "$TOTAL_EXIBIDO_HUMAN"
 
-  printf "%bParametros disponiveis%b\n" "$C_LABEL" "$C_RESET"
+  printf "%b%s%b\n" "$C_LABEL" "$(t available_flags)" "$C_RESET"
   printf "  --sort [time|name|size]\n"
   printf "  --top N\n"
-  printf "  --no-color\n\n"
+  printf "  --all / -a\n"
+  printf "  --no-color\n"
+  printf "  --lang en|pt|es\n\n"
 
-  printf "%bParametros atuais%b\n" "$C_LABEL" "$C_RESET"
-  printf "  Sort  : %s\n" "$SORT_BY"
-  printf "  Top   : %s\n" "${TOP_N:-todos}"
-  printf "  Cores : %s\n\n" "$([[ "$USE_COLOR" -eq 1 ]] && echo "on" || echo "off")"
+  printf "%b%s%b\n" "$C_LABEL" "$(t current_flags)" "$C_RESET"
+  printf "  %s : %s\n"   "$(t sort)"  "$SORT_BY"
+  printf "  %s : %s\n"   "$(t top)"   "${TOP_N:-$(t all)}"
+  printf "  %s : %s\n\n" "$(t color)" "$(color_label)"
 fi
 
-{
-  printf "ARQUIVO${SEP_IN}MODIFICADO EM${SEP_IN}TAMANHO\n"
-  grep -v '^__SUMMARY__' "$TMP_FILE"
-} | column -s "$SEP_IN" -t -o "$SEP_OUT" | awk -F"$SEP_OUT" \
-  -v use_color="$USE_COLOR" '
-BEGIN {
-  if (use_color == 1) {
-    amarelo = "\033[1;33m"
-    verde   = "\033[1;32m"
-    magenta = "\033[1;35m"
-    reset   = "\033[0m"
-    bg1     = ""
-    bg2     = "\033[48;5;236m"
-  } else {
-    amarelo = ""
-    verde   = ""
-    magenta = ""
-    reset   = ""
-    bg1     = ""
-    bg2     = ""
-  }
-}
-NR == 1 {
-  printf "%s%s%s | %s%s%s | %s%s%s\n",
-    amarelo, $1, reset,
-    verde,   $2, reset,
-    magenta, $3, reset
+# ---------------------------------------------------------------------------
+# Table
+# ---------------------------------------------------------------------------
 
+{
+  printf "f%s%s%s%s%s%s\n" "$SEP_IN" "$(t tbl_file)" "$SEP_IN" "$(t tbl_modified)" "$SEP_IN" "$(t tbl_size)"
+  grep -v '^__SUMMARY__' "$TMP_FILE" || true
+} \
+| awk -F"$SEP_IN" -v OFS="$SEP_IN" 'NR==1 {print $2, $3, $4; next} {print $2, $3, $4}' \
+| column -s "$SEP_IN" -t -o "$SEP_OUT" \
+| awk -F"$SEP_OUT" \
+    -v use_color="$USE_COLOR" \
+    -v file_color="$FILE_COLOR" \
+    -v dir_color="$DIR_COLOR" \
+    -v date_color="$DATE_COLOR" \
+    -v size_color="$SIZE_COLOR" \
+    -v reset="$C_RESET" \
+    -v bg_alt="$ROW_BG_ALT" '
+NR == 1 {
+  printf "%s%s%s | %s%s%s | %s%s%s\n", file_color, $1, reset, date_color, $2, reset, size_color, $3, reset
   sep_len = length($1) + length($2) + length($3) + 6
   for (i = 0; i < sep_len; i++) printf "-"
   printf "\n"
   next
 }
 {
-  bg = (NR % 2 == 0) ? bg2 : bg1
-
-  printf "%s%s%s%s | %s%s%s%s | %s%s%s%s\033[0m\n",
-    bg, amarelo, $1, reset,
-    bg, verde,   $2, reset,
-    bg, magenta, $3, reset
+  is_dir = ($1 ~ /\/[[:space:]]*$/)
+  name_color = is_dir ? dir_color : file_color
+  bg = (NR % 2 == 0) ? bg_alt : ""
+  printf "%s%s%s%s | %s%s%s%s | %s%s%s%s%s\n",
+    bg, name_color, $1, reset,
+    bg, date_color, $2, reset,
+    bg, size_color, $3, reset, reset
 }'

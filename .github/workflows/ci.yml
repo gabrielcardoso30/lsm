@@ -45,10 +45,36 @@ jobs:
       - name: Run shellcheck
         run: shellcheck lsm
 
-      - name: Smoke-run lsm (surfaces real errors before bats)
+      - name: Diagnose runtime environment
         run: |
-          ./lsm --no-color . 2>&1 | head -30 || true
-          ./lsm --no-color --sort name . 2>&1 | tail -10 || true
+          echo "=== bash ==="
+          bash --version | head -1
+          command -v bash
+          echo "=== find ==="
+          command -v find
+          find --version 2>&1 | head -2 || true
+          echo "=== gfind ==="
+          command -v gfind 2>&1 || echo "(no gfind in PATH)"
+          echo "=== awk ==="
+          command -v awk
+          awk --version 2>&1 | head -2 || awk -W version 2>&1 | head -2 || true
+          echo "=== realpath ==="
+          command -v realpath
+          realpath --version 2>&1 | head -2 || true
+          echo "=== PATH ==="
+          echo "$PATH"
+
+      - name: Smoke-run lsm with full output and bash trace
+        run: |
+          set +e
+          echo "=== ./lsm --no-color . (plain) ==="
+          ./lsm --no-color . ; rc=$?
+          echo "=== exit code: $rc ==="
+          if [[ $rc -ne 0 ]]; then
+            echo "=== ./lsm --no-color . (bash -x trace, last 80 lines) ==="
+            bash -x ./lsm --no-color . 2>&1 | tail -80
+            exit 1
+          fi
 
       - name: Run bats
         run: bats test/

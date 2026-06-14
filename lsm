@@ -4,7 +4,8 @@
 # https://github.com/gabrielcardoso30/lsm
 #
 # Requires: bash 4+ (associative arrays), GNU find (for -printf), awk, tput,
-# realpath. On macOS install via `brew install coreutils bash`.
+# realpath. On macOS: `brew install findutils coreutils bash`. `find` is part
+# of findutils; coreutils does NOT include it.
 
 set -eu
 # pipefail is intentionally NOT set: the `find | sort | head` pipeline below

@@ -24,16 +24,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck bats
 
-      - name: Install shellcheck, bats-core, GNU coreutils, bash 5 (macOS)
+      - name: Install shellcheck, bats-core, GNU coreutils + findutils, bash 5 (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install shellcheck bats-core coreutils bash
+          # findutils ships GNU `find` (with -printf, the GNU extension lsm
+          # depends on). coreutils ships GNU `realpath`. They are separate
+          # brew formulae — installing coreutils alone is not enough.
+          brew install shellcheck bats-core coreutils findutils bash
           # Make `bash` resolve to brew's bash 5+ (needed for declare -A).
           echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
-          # Prepend coreutils' gnubin so `find` itself is GNU find (lsm needs
-          # `find -printf`). This follows brew's own caveat for coreutils.
+          # Prepend each formula's gnubin so the unprefixed binaries
+          # (`find`, `realpath`, ...) are the GNU implementations.
           echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
+          echo "$(brew --prefix findutils)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Print versions
         run: |

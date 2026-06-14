@@ -31,6 +31,9 @@ jobs:
           brew install shellcheck bats-core coreutils bash
           # Make `bash` resolve to brew's bash 5+ (needed for declare -A).
           echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
+          # Prepend coreutils' gnubin so `find` itself is GNU find (lsm needs
+          # `find -printf`). This follows brew's own caveat for coreutils.
+          echo "$(brew --prefix coreutils)/libexec/gnubin" >> "$GITHUB_PATH"
 
       - name: Print versions
         run: |

@@ -6,15 +6,16 @@ load helpers
 setup()    { make_fixture; }
 teardown() { cleanup_fixture; }
 
-# Return only the file/dir-name column from the table portion of the output.
-# The table starts after the line beginning with "FILE" (the header). We grep
-# for lines that contain one of the fixture entries and preserve their order.
+# Return only the file/dir-name column from the table portion of the output,
+# preserving the row order.
+#
+# Row layout since v0.2.0: `IDX | TYPE | NAME | MODIFIED AT | SIZE`.
+# We grep the rows containing a fixture entry, then awk the third
+# pipe-delimited field with surrounding whitespace stripped.
 fixture_names_in_order() {
   printf '%s\n' "$output" \
-    | awk '/^FILE/,EOF' \
     | grep -E 'alpha\.txt|Bravo\.md|charlie\.log|subdir/' \
-    | sed -E 's/[[:space:]]*\|.*$//' \
-    | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//'
+    | awk -F'|' '{ gsub(/^[[:space:]]+|[[:space:]]+$/, "", $3); print $3 }'
 }
 
 @test "AC-4: --sort time orders rows from newest to oldest mtime" {

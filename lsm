@@ -266,7 +266,6 @@ case "$SORT_BY" in
 esac
 
 SEP_IN=$'\t'
-SEP_OUT=$'\x1f'
 TMP_FILE="$(mktemp)"
 trap 'rm -f "$TMP_FILE"' EXIT
 

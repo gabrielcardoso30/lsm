@@ -45,3 +45,37 @@ reports the directory's true totals and additionally surfaces `Shown: N`.
 **Example.** `lsm --top 10`
 
 **Related.** sort key.
+
+## Message table
+
+**Definition.** A bash associative array that maps token ids
+(e.g., `summary`, `tbl_modified`, `invalid_sort`) to localized strings for a
+single language. `lsm` ships three message tables in v1: `MSG_EN`, `MSG_PT`,
+`MSG_ES`. The active table is selected at startup based on the resolved
+[language code](#language-code). See ADR-0003.
+
+**Example.** `MSG_PT[summary]="Resumo"`
+
+**Related.** language code, t() helper.
+
+## Language code
+
+**Definition.** A two-letter string that identifies the active output
+language. Supported values in v1: `en`, `pt`, `es`. Resolution precedence:
+`--lang` flag > `LSM_LANG` env var > `LANG`/`LC_ALL` prefix match > `en`
+default. Unsupported codes silently fall back to `en`.
+
+**Example.** `LSM_LANG=pt lsm`
+
+**Related.** message table.
+
+## Directory marker
+
+**Definition.** The trailing `/` appended to directory names in the file
+table, plus the cyan color applied when color is enabled. The marker is the
+visual signal that a row represents a subdirectory rather than a regular file.
+
+**Example.** `docs/` in the FILE column of `lsm`'s output.
+
+**Related.** summary card.
+

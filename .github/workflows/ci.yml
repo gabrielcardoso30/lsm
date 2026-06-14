@@ -24,11 +24,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck bats
 
-      - name: Install shellcheck, bats-core, GNU coreutils (macOS)
+      - name: Install shellcheck, bats-core, GNU coreutils, bash 5 (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install shellcheck bats-core coreutils
+          brew install shellcheck bats-core coreutils bash
+          # Make `bash` resolve to brew's bash 5+ (needed for declare -A).
+          echo "$(brew --prefix bash)/bin" >> "$GITHUB_PATH"
 
       - name: Print versions
         run: |

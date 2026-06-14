@@ -19,7 +19,7 @@ and `column`, and avoid carrying a heavy runtime.
 
 ## What
 
-`lsm [PATH] [--sort time|name|size] [--top N] [--no-color]`
+`lsm [PATH] [--sort time|name|size] [--top N] [--all] [--no-color]`
 
 From the user's perspective:
 
@@ -29,9 +29,14 @@ From the user's perspective:
 - `--sort` selects the column the table is sorted by (`time` is the default; newest first).
   `name` sorts case-insensitive ascending; `size` sorts largest first.
 - `--top N` truncates the table to the first `N` rows after sorting. The summary card still
-  reports `Exibidos: N` against the directory's true totals.
+  reports `Shown: N` against the directory's true totals.
+- `--all` (or `-a`) includes dotfiles (hidden files starting with `.`). Default behavior
+  hides them, matching `ls`'s mental model.
 - `--no-color` disables ANSI escapes for environments without color support (CI logs, pipes,
   terminals without truecolor).
+- All labels in the output are in English (`Summary`, `Directory`, `Items`, `Files`,
+  `Folders`, `Size`, `Shown`, `Sort`, `Top`, `Color`, `Available flags`, `Current flags`,
+  `FILE`, `MODIFIED AT`, `SIZE`).
 - Errors (invalid directory, invalid flag value, missing `column`) print a red `Error:` prefix
   to stderr and exit with a non-zero status code.
 - When the terminal is narrower than the threshold for the 3-card layout, the summary falls
@@ -42,8 +47,8 @@ From the user's perspective:
 ### Listing and summary
 
 - **AC-1**: Given a directory with N regular files and M subdirectories, when the user runs
-  `lsm <dir>`, then the summary card reports `Itens: N+M`, `Arquivos: N`, `Pastas: M`, and
-  `Tamanho` equal to the sum of file sizes formatted with the human-readable unit (B/KB/MB/GB,
+  `lsm <dir>`, then the summary card reports `Items: N+M`, `Files: N`, `Folders: M`, and
+  `Size` equal to the sum of file sizes formatted with the human-readable unit (B/KB/MB/GB,
   two decimals for non-bytes).
 - **AC-2**: Given any directory, when the user runs `lsm <dir>`, then the resolved absolute
   path of `<dir>` is printed in the header (matching `realpath <dir>`).
@@ -64,8 +69,8 @@ From the user's perspective:
 ### Top-N truncation
 
 - **AC-8**: Given a directory with K files and an integer N where `0 < N < K`, when the user
-  runs `lsm --top N`, then exactly N rows are printed and the summary card reports `Exibidos: N`
-  while still reporting `Arquivos: K`.
+  runs `lsm --top N`, then exactly N rows are printed and the summary card reports `Shown: N`
+  while still reporting `Files: K`.
 - **AC-9**: Given a non-integer value for `--top`, when the user runs `lsm --top abc`, then the
   command exits with a non-zero status and prints an error about the expected numeric value.
 
@@ -77,22 +82,40 @@ From the user's perspective:
   user runs `lsm`, then the summary falls back to a stacked text layout that fits within 80
   columns.
 
+### Hidden files
+
+- **AC-12**: Given a directory containing both regular files and dotfiles, when the user runs
+  `lsm` without `--all`, then dotfiles are excluded from the table and from the `Files`,
+  `Items`, and `Size` totals in the summary card.
+- **AC-13**: Given the same directory, when the user runs `lsm --all` (or `lsm -a`), then
+  dotfiles are included in the table and counted toward `Files`, `Items`, and `Size`.
+
 ### Errors
 
-- **AC-12**: Given a path that does not exist or is not a directory, when the user runs
+- **AC-14**: Given a path that does not exist or is not a directory, when the user runs
   `lsm <path>`, then the command prints an error to stderr and exits with a non-zero status.
-- **AC-13**: Given an environment without the `column` utility, when the user runs `lsm`, then
+- **AC-15**: Given an environment without the `column` utility, when the user runs `lsm`, then
   the command prints an error to stderr and exits with a non-zero status.
+
+### Localization
+
+- **AC-16**: Given any invocation, when `lsm` prints output, then every label is in English
+  (no pt-BR strings such as `Diretorio`, `Resumo`, `Arquivos`, `Pastas`, `Tamanho`,
+  `Exibidos`, `Itens`, `Parametros disponiveis`, `Parametros atuais`, `ARQUIVO`,
+  `MODIFICADO EM`, `TAMANHO`, `Cores`, `todos`). v1 ships English-only; i18n is a deferred
+  ADR (see Resolved decisions OQ-4).
 
 ### Quality and distribution
 
-- **AC-14**: The script passes `shellcheck` with no errors.
-- **AC-15**: The repository ships an automated test suite (`bats-core`) that executes every
+- **AC-17**: The script passes `shellcheck` with no errors.
+- **AC-18**: The repository ships an automated test suite (`bats-core`) that executes every
   acceptance criterion above against a fixture directory.
-- **AC-16**: CI runs `shellcheck` and the `bats` suite on every push and pull request, on
+- **AC-19**: CI runs `shellcheck` and the `bats` suite on every push and pull request, on
   Ubuntu and macOS runners.
-- **AC-17**: The README documents installation via one-line `curl | bash`, manual binary copy,
+- **AC-20**: The README documents installation via one-line `curl | bash`, manual binary copy,
   and (planned) distro packages.
+- **AC-21**: Releases follow SemVer, tagged in git, published as GitHub Releases starting at
+  `v0.1.0`. Distro packaging (AUR, Homebrew, `.deb`) is deferred to v0.2.
 
 ## Non-goals
 
@@ -108,19 +131,20 @@ From the user's perspective:
 - **No file-content preview.** `lsm` answers "what is here", not "what is in this file".
 - **No Windows support in v1.** Targets Linux and macOS. WSL is supported transitively.
 
-## Open questions
+## Resolved decisions
 
-- **OQ-1**: Default sort — keep `time` (current) or move to `name` to match `ls`? Decision
-  affects AC-4.
-- **OQ-2**: Hidden files (dotfiles) — include them by default, hide them like `ls`, or add a
-  `--all` flag? Current implementation hides them implicitly via `find -maxdepth 1 -type f`.
-- **OQ-3**: Should `lsm <dir>` also list subdirectories in the table (with a `<DIR>` size
-  marker), or stay files-only? Current implementation lists files only; the summary already
-  counts folders separately.
-- **OQ-4**: Internationalization — labels are currently mixed pt-BR/English ("Diretorio",
-  "Resumo", "Arquivos"). For international adoption, should v1 ship English-only labels with a
-  future i18n layer, or ship with a `LSM_LANG` env var from day one?
-- **OQ-5**: License — MIT (permissive, maximizes adoption) vs Apache-2.0 (explicit patent
-  grant). Default proposal: MIT.
-- **OQ-6**: Versioning and release cadence — adopt SemVer + git tags + GitHub Releases from
-  v0.1.0? Distro packaging (AUR, Homebrew, .deb) deferred until v0.2.
+Confirmed by the maintainer on 2026-06-14. All previously open questions are folded into
+the acceptance criteria above.
+
+- **OQ-1 (resolved)**: Default sort is `time` (mtime, newest first). Rationale: `lsm`
+  answers "what changed here?", which is distinct from `ls`'s alphabetical default.
+- **OQ-2 (resolved)**: Dotfiles are hidden by default. `--all` (or `-a`) opts in. See AC-12
+  and AC-13.
+- **OQ-3 (resolved)**: The table lists regular files only. Subdirectories are counted in the
+  summary card but do not appear as rows. Reopen as a future ADR if community feedback asks
+  for it.
+- **OQ-4 (resolved)**: v1 ships English-only labels (AC-16). Internationalization
+  (`LSM_LANG` env var or `.po` files) is deferred to a future ADR.
+- **OQ-5 (resolved)**: MIT license (see `LICENSE`).
+- **OQ-6 (resolved)**: SemVer with git tags and GitHub Releases starting at v0.1.0.
+  Distro packaging deferred to v0.2 (see AC-21).

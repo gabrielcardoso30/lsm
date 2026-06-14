@@ -81,7 +81,9 @@ sudo install -m 0755 lsm /usr/local/bin/lsm
 
 - `bash` 4+ (for associative arrays — note: macOS ships bash 3.2; install
   a newer bash via Homebrew)
-- `coreutils` (`find`, `realpath`, `tput`)
+- **GNU coreutils** (`find`/`gfind`, `realpath`/`grealpath`). `lsm` relies on
+  `find -printf`, which is a GNU extension. On macOS run
+  `brew install coreutils` to get `gfind`; `lsm` picks it up automatically.
 - `awk` (`gawk` or `mawk`)
 - `column` (from `bsdmainutils` on Debian/Ubuntu, `util-linux` elsewhere)
 

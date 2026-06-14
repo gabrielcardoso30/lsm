@@ -219,6 +219,20 @@ fi
 
 REAL_DIR="$(realpath "$DIR" 2>/dev/null || printf '%s' "$DIR")"
 
+# Prefer GNU find (required for -printf). On macOS, install via `brew install
+# coreutils` to get `gfind`. Fail loudly if neither has GNU semantics.
+if command -v gfind >/dev/null 2>&1; then
+  FIND=gfind
+else
+  FIND=find
+fi
+if ! "$FIND" / -maxdepth 0 -printf '' 2>/dev/null; then
+  printf "\033[1;31m%s\033[0m %s requires GNU find (or 'gfind' from coreutils). " \
+    "$(t error)" "lsm" >&2
+  printf "On macOS: brew install coreutils.\n" >&2
+  exit 1
+fi
+
 # ---------------------------------------------------------------------------
 # Inventory: count entries respecting --all
 # ---------------------------------------------------------------------------
@@ -229,8 +243,8 @@ else
   FIND_HIDDEN_FILTER=(! -name '.*')
 fi
 
-TOTAL_ARQUIVOS=$(find "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" -printf 'x\n' 2>/dev/null | wc -l)
-TOTAL_PASTAS=$(find "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" -printf 'x\n' 2>/dev/null | wc -l)
+TOTAL_ARQUIVOS=$("$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" -printf 'x\n' 2>/dev/null | wc -l)
+TOTAL_PASTAS=$("$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" -printf 'x\n' 2>/dev/null | wc -l)
 TOTAL_ITENS=$((TOTAL_ARQUIVOS + TOTAL_PASTAS))
 
 # ---------------------------------------------------------------------------
@@ -256,9 +270,9 @@ TMP_FILE="$(mktemp)"
 trap 'rm -f "$TMP_FILE"' EXIT
 
 {
-  find "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" \
+  "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" \
     -printf 'f|%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%s\n' 2>/dev/null
-  find "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" \
+  "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" \
     -printf 'd|%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|-1\n' 2>/dev/null
 } \
 | sort "${SORT_ARGS[@]}" \

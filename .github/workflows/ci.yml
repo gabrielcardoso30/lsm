@@ -24,20 +24,26 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y shellcheck bats
 
-      - name: Install shellcheck and bats-core (macOS)
+      - name: Install shellcheck, bats-core, GNU coreutils (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install shellcheck bats-core
+          brew install shellcheck bats-core coreutils
 
       - name: Print versions
         run: |
           bash --version | head -1
           shellcheck --version | head -2
           bats --version
+          if command -v gfind >/dev/null 2>&1; then gfind --version | head -1; else find --version | head -1; fi
 
       - name: Run shellcheck
         run: shellcheck lsm
+
+      - name: Smoke-run lsm (surfaces real errors before bats)
+        run: |
+          ./lsm --no-color . 2>&1 | head -30 || true
+          ./lsm --no-color --sort name . 2>&1 | tail -10 || true
 
       - name: Run bats
         run: bats test/

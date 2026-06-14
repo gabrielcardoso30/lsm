@@ -245,9 +245,9 @@ TOTAL_ITENS=$((TOTAL_ARQUIVOS + TOTAL_PASTAS))
 #   5: bytes (-1 for directories so they sort last on --sort size)
 
 case "$SORT_BY" in
-  time) SORT_ARGS=(-t'|' -nrk2,2) ;;
-  name) SORT_ARGS=(-t'|' -k3,3f) ;;
-  size) SORT_ARGS=(-t'|' -nrk5,5) ;;
+  time) SORT_ARGS=("-t|" "-nrk2,2") ;;
+  name) SORT_ARGS=("-t|" "-k3,3f") ;;
+  size) SORT_ARGS=("-t|" "-nrk5,5") ;;
 esac
 
 SEP_IN=$'\t'
@@ -382,7 +382,13 @@ print_card_line_3() {
     "$CARD_BORDER_COLOR" "$CARD_COL3_COLOR" "$(pad_right "$c3" "$w")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET"
 }
 
-color_label() { [[ $USE_COLOR -eq 1 ]] && t on || t off; }
+color_label() {
+  if [[ $USE_COLOR -eq 1 ]]; then
+    t on
+  else
+    t off
+  fi
+}
 
 if [[ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]]; then
   CARD_INNER_WIDTH=30

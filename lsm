@@ -1,0 +1,327 @@
+#!/usr/bin/env bash
+
+export LC_ALL=C.UTF-8
+
+DIR="."
+SORT_BY="time"
+TOP_N=""
+USE_COLOR=1
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --sort)
+      SORT_BY="${2:-}"
+      shift 2
+      ;;
+    --top)
+      TOP_N="${2:-}"
+      shift 2
+      ;;
+    --no-color)
+      USE_COLOR=0
+      shift
+      ;;
+    -*)
+      printf "Opção inválida: %s\n" "$1"
+      exit 1
+      ;;
+    *)
+      DIR="$1"
+      shift
+      ;;
+  esac
+done
+
+if [ ! -d "$DIR" ]; then
+  printf "\033[1;31mErro:\033[0m diretório inválido: %s\n" "$DIR"
+  exit 1
+fi
+
+if ! command -v column >/dev/null 2>&1; then
+  printf "\033[1;31mErro:\033[0m o comando 'column' não foi encontrado.\n"
+  exit 1
+fi
+
+case "$SORT_BY" in
+  time) SORT_CMD="sort -t'|' -nrk1,1" ;;
+  name) SORT_CMD="sort -t'|' -k2,2f" ;;
+  size) SORT_CMD="sort -t'|' -nrk4,4" ;;
+  *)
+    printf "\033[1;31mErro:\033[0m valor inválido para --sort: %s\n" "$SORT_BY"
+    printf "Valores aceitos: time, name, size\n"
+    exit 1
+    ;;
+esac
+
+if [[ -n "$TOP_N" && ! "$TOP_N" =~ ^[0-9]+$ ]]; then
+  printf "\033[1;31mErro:\033[0m o valor de --top deve ser numérico.\n"
+  exit 1
+fi
+
+REAL_DIR="$(realpath "$DIR" 2>/dev/null || echo "$DIR")"
+
+TOTAL_ARQUIVOS=$(find "$DIR" -maxdepth 1 -type f | wc -l)
+TOTAL_PASTAS=$(find "$DIR" -maxdepth 1 -mindepth 1 -type d | wc -l)
+TOTAL_ITENS=$((TOTAL_ARQUIVOS + TOTAL_PASTAS))
+
+SEP_IN=$'\t'
+SEP_OUT=$'\x1f'
+TMP_FILE=$(mktemp)
+trap 'rm -f "$TMP_FILE"' EXIT
+
+find "$DIR" -maxdepth 1 -type f -printf '%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%s\n' 2>/dev/null \
+| eval "$SORT_CMD" \
+| {
+    if [[ -n "$TOP_N" ]]; then
+      head -n "$TOP_N"
+    else
+      cat
+    fi
+  } \
+| awk -F'|' '
+    BEGIN {
+      total_bytes = 0
+    }
+    {
+      nome = $2
+      gsub(/\t/, " ", nome)
+
+      split($3, dt, "\\.")
+      data = dt[1]
+
+      bytes = $4 + 0
+      total_bytes += bytes
+
+      if (bytes >= 1024*1024*1024) {
+        tamanho = sprintf("%.2f GB", bytes / 1024 / 1024 / 1024)
+      } else if (bytes >= 1024*1024) {
+        tamanho = sprintf("%.2f MB", bytes / 1024 / 1024)
+      } else if (bytes >= 1024) {
+        tamanho = sprintf("%.2f KB", bytes / 1024)
+      } else {
+        tamanho = sprintf("%d B", bytes)
+      }
+
+      print nome "\t" data "\t" tamanho
+      linhas++
+    }
+    END {
+      printf "__SUMMARY__\t%d\t%d\n", linhas, total_bytes
+    }
+  ' > "$TMP_FILE"
+
+EXIBIDOS=$(awk -F'\t' '$1=="__SUMMARY__" {print $2}' "$TMP_FILE")
+TOTAL_BYTES_EXIBIDOS=$(awk -F'\t' '$1=="__SUMMARY__" {print $3}' "$TMP_FILE")
+
+if [[ -z "$EXIBIDOS" ]]; then
+  EXIBIDOS=0
+fi
+
+format_bytes_human() {
+  local bytes="$1"
+  awk -v bytes="$bytes" '
+    BEGIN {
+      if (bytes >= 1024*1024*1024) {
+        printf "%.2f GB", bytes / 1024 / 1024 / 1024
+      } else if (bytes >= 1024*1024) {
+        printf "%.2f MB", bytes / 1024 / 1024
+      } else if (bytes >= 1024) {
+        printf "%.2f KB", bytes / 1024
+      } else {
+        printf "%d B", bytes
+      }
+    }
+  '
+}
+
+TOTAL_EXIBIDO_HUMAN=$(format_bytes_human "$TOTAL_BYTES_EXIBIDOS")
+
+if [[ "$USE_COLOR" -eq 1 ]]; then
+  C_TITULO="\033[1;36m"
+  C_LABEL="\033[0;37m"
+  C_ARQ="\033[1;33m"
+  C_DATA="\033[1;32m"
+  C_SIZE="\033[1;35m"
+  C_BG1=""
+  C_BG2="\033[48;5;236m"
+  C_RESET="\033[0m"
+
+  CARD_BORDER_COLOR="\033[38;5;250m"
+  CARD_TITLE_COLOR="\033[1;97m"
+  CARD_TITLE_BG="\033[48;5;238m"
+  CARD_COL1_COLOR="\033[38;5;229m"
+  CARD_COL2_COLOR="\033[38;5;121m"
+  CARD_COL3_COLOR="\033[38;5;225m"
+else
+  C_TITULO=""
+  C_LABEL=""
+  C_ARQ=""
+  C_DATA=""
+  C_SIZE=""
+  C_BG1=""
+  C_BG2=""
+  C_RESET=""
+
+  CARD_BORDER_COLOR=""
+  CARD_TITLE_COLOR=""
+  CARD_TITLE_BG=""
+  CARD_COL1_COLOR=""
+  CARD_COL2_COLOR=""
+  CARD_COL3_COLOR=""
+fi
+
+repeat_char() {
+  local char="$1"
+  local count="$2"
+  printf "%*s" "$count" "" | tr " " "$char"
+}
+
+pad_right() {
+  local text="$1"
+  local width="$2"
+
+  if [ "${#text}" -gt "$width" ]; then
+    printf "%s..." "${text:0:$((width-3))}"
+  else
+    printf "%-${width}s" "$text"
+  fi
+}
+
+print_card_separator_3() {
+  local w="$1"
+  local sep
+  sep="$(repeat_char "-" "$w")"
+
+  printf "%b|-%s-|%b  %b|-%s-|%b  %b|-%s-|%b\n" \
+    "$CARD_BORDER_COLOR" "$sep" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$sep" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$sep" "$C_RESET"
+}
+
+print_card_line_3() {
+  local c1="$1"
+  local c2="$2"
+  local c3="$3"
+  local w="$4"
+
+  printf "%b| %b%s%b %b|%b  %b| %b%s%b %b|%b  %b| %b%s%b %b|%b\n" \
+    "$CARD_BORDER_COLOR" "$CARD_COL1_COLOR" "$(pad_right "$c1" "$w")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_COL2_COLOR" "$(pad_right "$c2" "$w")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_COL3_COLOR" "$(pad_right "$c3" "$w")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET"
+}
+
+TERM_WIDTH=$(tput cols 2>/dev/null || echo 120)
+MIN_WIDTH_3COL=110
+
+draw_line() {
+  local char="$1"
+  local width="$2"
+  printf "%*s\n" "$width" "" | tr " " "$char"
+}
+
+LINE_CHAR="-"
+LINE=$(printf "%*s" "$TERM_WIDTH" "" | tr " " "$LINE_CHAR")
+
+HEADER_LINE_COLOR="\033[38;5;238m"   # cinza discreto
+HEADER_TITLE_COLOR="\033[1;96m"      # ciano forte
+HEADER_PATH_COLOR="\033[1;37m"       # branco forte
+
+printf "%b%s%b\n" "$HEADER_LINE_COLOR" "$LINE" "$C_RESET"
+
+printf "%b LSM%b %b|%b %bLista itens do diretório com ordenação e limite de exibição%b\n" \
+  "$HEADER_TITLE_COLOR" "$C_RESET" \
+  "$HEADER_LINE_COLOR" "$C_RESET" \
+  "$HEADER_TITLE_COLOR" "$C_RESET"
+
+printf "%b Diretorio:%b %b%s%b\n" \
+  "$C_LABEL" "$C_RESET" \
+  "$HEADER_PATH_COLOR" "$REAL_DIR" "$C_RESET"
+
+printf "%b%s%b\n\n" "$HEADER_LINE_COLOR" "$LINE" "$C_RESET"
+
+if [ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]; then
+  CARD_INNER_WIDTH=30
+  CARD_BORDER="+-$(repeat_char "-" "$CARD_INNER_WIDTH")-+"
+
+  printf "%b%s%b  %b%s%b  %b%s%b\n" \
+    "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET"
+
+  printf "%b| %b%b%s%b %b|%b  %b| %b%b%s%b %b|%b  %b| %b%b%s%b %b|%b\n" \
+    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "Resumo" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "Parametros disponiveis" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_TITLE_BG" "$CARD_TITLE_COLOR" "$(pad_right "Parametros atuais" "$CARD_INNER_WIDTH")" "$C_RESET" "$CARD_BORDER_COLOR" "$C_RESET"
+
+  print_card_separator_3 "$CARD_INNER_WIDTH"
+
+  print_card_line_3 "Exibidos : $EXIBIDOS" "--sort [time|name|size]" "Sort  : $SORT_BY" "$CARD_INNER_WIDTH"
+  print_card_line_3 "Itens    : $TOTAL_ITENS" "--top N" "Top   : ${TOP_N:-todos}" "$CARD_INNER_WIDTH"
+  print_card_line_3 "Arquivos : $TOTAL_ARQUIVOS" "--no-color" "Cores : $([[ "$USE_COLOR" -eq 1 ]] && echo "on" || echo "off")" "$CARD_INNER_WIDTH"
+  print_card_line_3 "Pastas   : $TOTAL_PASTAS" "" "" "$CARD_INNER_WIDTH"
+  print_card_line_3 "Tamanho  : $TOTAL_EXIBIDO_HUMAN" "" "" "$CARD_INNER_WIDTH"
+
+  printf "%b%s%b  %b%s%b  %b%s%b\n\n" \
+    "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
+    "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET"
+else
+  printf "%bResumo%b\n" "$C_LABEL" "$C_RESET"
+  printf "  Exibidos : %s\n" "$EXIBIDOS"
+  printf "  Itens    : %s\n" "$TOTAL_ITENS"
+  printf "  Arquivos : %s\n" "$TOTAL_ARQUIVOS"
+  printf "  Pastas   : %s\n" "$TOTAL_PASTAS"
+  printf "  Tamanho  : %s\n\n" "$TOTAL_EXIBIDO_HUMAN"
+
+  printf "%bParametros disponiveis%b\n" "$C_LABEL" "$C_RESET"
+  printf "  --sort [time|name|size]\n"
+  printf "  --top N\n"
+  printf "  --no-color\n\n"
+
+  printf "%bParametros atuais%b\n" "$C_LABEL" "$C_RESET"
+  printf "  Sort  : %s\n" "$SORT_BY"
+  printf "  Top   : %s\n" "${TOP_N:-todos}"
+  printf "  Cores : %s\n\n" "$([[ "$USE_COLOR" -eq 1 ]] && echo "on" || echo "off")"
+fi
+
+{
+  printf "ARQUIVO${SEP_IN}MODIFICADO EM${SEP_IN}TAMANHO\n"
+  grep -v '^__SUMMARY__' "$TMP_FILE"
+} | column -s "$SEP_IN" -t -o "$SEP_OUT" | awk -F"$SEP_OUT" \
+  -v use_color="$USE_COLOR" '
+BEGIN {
+  if (use_color == 1) {
+    amarelo = "\033[1;33m"
+    verde   = "\033[1;32m"
+    magenta = "\033[1;35m"
+    reset   = "\033[0m"
+    bg1     = ""
+    bg2     = "\033[48;5;236m"
+  } else {
+    amarelo = ""
+    verde   = ""
+    magenta = ""
+    reset   = ""
+    bg1     = ""
+    bg2     = ""
+  }
+}
+NR == 1 {
+  printf "%s%s%s | %s%s%s | %s%s%s\n",
+    amarelo, $1, reset,
+    verde,   $2, reset,
+    magenta, $3, reset
+
+  sep_len = length($1) + length($2) + length($3) + 6
+  for (i = 0; i < sep_len; i++) printf "-"
+  printf "\n"
+  next
+}
+{
+  bg = (NR % 2 == 0) ? bg2 : bg1
+
+  printf "%s%s%s%s | %s%s%s%s | %s%s%s%s\033[0m\n",
+    bg, amarelo, $1, reset,
+    bg, verde,   $2, reset,
+    bg, magenta, $3, reset
+}'

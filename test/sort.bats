@@ -49,16 +49,15 @@ fixture_names_in_order() {
   lsm_run --no-color --sort size "$FIXTURE_DIR"
 
   [ "$status" -eq 0 ]
-  local names first last
+  local names first
   names="$(fixture_names_in_order)"
   first="$(printf '%s\n' "$names" | head -n 1)"
-  last="$(printf '%s\n'  "$names" | tail -n 1)"
-  # charlie.log (5000) is the largest by far; alpha.txt (100) is the smallest.
-  # An empty subdir/ on ext4 reports ~4 KB, so Bravo.md (2000) and subdir/
-  # interleave around it depending on filesystem block size. We only assert
-  # the extremes — which are stable across filesystems.
+  # charlie.log (5000 B) is the largest entry by a comfortable margin and is
+  # the only stable extreme across filesystems. An empty `subdir/` reports
+  # very different sizes on ext4 (block-size, ~4 KB) versus APFS / tmpfs
+  # (often 0), so the smallest row is filesystem-dependent — we deliberately
+  # do not assert it.
   [ "$first" = "charlie.log" ]
-  [ "$last"  = "alpha.txt" ]
 }
 
 @test "AC-7: --sort foo exits non-zero and prints accepted values" {

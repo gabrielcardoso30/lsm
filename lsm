@@ -366,11 +366,19 @@ repeat_char() {
 }
 
 pad_right() {
-  local text="$1" width="$2"
-  if [[ "${#text}" -gt "$width" ]]; then
+  # UTF-8-aware right-padding. bash's `${#var}` counts characters under
+  # LC_ALL=C.UTF-8, but `printf "%-Ns"` pads by BYTES on glibc — so labels
+  # with multi-byte characters (â, í, ñ, ã, ç) ended up narrower than the
+  # cell and broke card alignment. We compute the missing visual width as
+  # `width - char_count` and emit exactly that many trailing spaces via
+  # `%*s "" `, which sidesteps the byte/char ambiguity.
+  local text="$1"
+  local width="$2"
+  local len="${#text}"
+  if [[ "$len" -gt "$width" ]]; then
     printf "%s..." "${text:0:$((width-3))}"
   else
-    printf "%-${width}s" "$text"
+    printf "%s%*s" "$text" "$((width - len))" ""
   fi
 }
 
@@ -415,6 +423,30 @@ color_label() {
   fi
 }
 
+# pad_label: same idea as pad_right but never truncates — used to align the
+# `label : value` columns in the summary cards across languages where the
+# longest label varies (e.g. "Tamanho" vs "Folders" vs "Carpetas").
+pad_label() {
+  local text="$1"
+  local width="$2"
+  local len="${#text}"
+  printf "%s%*s" "$text" "$((width - len))" ""
+}
+
+# Compute the widest label per card column so the colons align in any
+# language. Column 1: Shown/Items/Files/Folders/Size. Column 3: Sort/Top/Color.
+__c1_labels=("$(t shown)" "$(t items)" "$(t files)" "$(t folders)" "$(t size)")
+__c3_labels=("$(t sort)"  "$(t top)"   "$(t color)")
+CARD_C1_LABEL_W=0
+for __lbl in "${__c1_labels[@]}"; do
+  (( ${#__lbl} > CARD_C1_LABEL_W )) && CARD_C1_LABEL_W=${#__lbl}
+done
+CARD_C3_LABEL_W=0
+for __lbl in "${__c3_labels[@]}"; do
+  (( ${#__lbl} > CARD_C3_LABEL_W )) && CARD_C3_LABEL_W=${#__lbl}
+done
+unset __c1_labels __c3_labels __lbl
+
 if [[ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]]; then
   CARD_INNER_WIDTH=30
   CARD_BORDER="+-$(repeat_char '-' "$CARD_INNER_WIDTH")-+"
@@ -431,11 +463,11 @@ if [[ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]]; then
 
   print_card_separator_3 "$CARD_INNER_WIDTH"
 
-  print_card_line_3 "$(t shown)    : $EXIBIDOS"          "--sort [time|name|size]"   "$(t sort)  : $SORT_BY"                     "$CARD_INNER_WIDTH"
-  print_card_line_3 "$(t items)    : $TOTAL_ITENS"       "--top N"                   "$(t top)   : ${TOP_N:-$(t all)}"           "$CARD_INNER_WIDTH"
-  print_card_line_3 "$(t files)    : $TOTAL_ARQUIVOS"    "--all / -a"                "$(t color) : $(color_label)"               "$CARD_INNER_WIDTH"
-  print_card_line_3 "$(t folders)  : $TOTAL_PASTAS"      "--no-color"                ""                                          "$CARD_INNER_WIDTH"
-  print_card_line_3 "$(t size)     : $TOTAL_EXIBIDO_HUMAN" "--lang en|pt|es"         ""                                          "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(pad_label "$(t shown)"   "$CARD_C1_LABEL_W") : $EXIBIDOS"             "--sort [time|name|size]" "$(pad_label "$(t sort)"  "$CARD_C3_LABEL_W") : $SORT_BY"            "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(pad_label "$(t items)"   "$CARD_C1_LABEL_W") : $TOTAL_ITENS"          "--top N"                 "$(pad_label "$(t top)"   "$CARD_C3_LABEL_W") : ${TOP_N:-$(t all)}" "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(pad_label "$(t files)"   "$CARD_C1_LABEL_W") : $TOTAL_ARQUIVOS"       "--all / -a"              "$(pad_label "$(t color)" "$CARD_C3_LABEL_W") : $(color_label)"    "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(pad_label "$(t folders)" "$CARD_C1_LABEL_W") : $TOTAL_PASTAS"         "--no-color"              ""                                                                "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(pad_label "$(t size)"    "$CARD_C1_LABEL_W") : $TOTAL_EXIBIDO_HUMAN"  "--lang en|pt|es"         ""                                                                "$CARD_INNER_WIDTH"
 
   printf "%b%s%b  %b%s%b  %b%s%b\n\n" \
     "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \

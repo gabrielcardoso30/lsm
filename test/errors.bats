@@ -21,13 +21,12 @@ load helpers
   [ "$status" -ne 0 ]
 }
 
-@test "AC-15: missing 'column' utility exits non-zero" {
-  # Simulate a PATH where 'column' does not exist.
+@test "AC-15: missing 'awk' utility exits non-zero" {
+  # Simulate a PATH where 'awk' does not exist. We include the binaries lsm
+  # needs at startup (bash, find, realpath) but exclude awk.
   local sandbox
   sandbox="$(mktemp -d)"
-  # Copy busybox-essential utilities into the sandbox PATH so the script can still
-  # find awk/find/tr/etc., but NOT column.
-  for tool in bash awk find tr sed mktemp realpath tput printf cat head sort grep; do
+  for tool in bash find tr sed mktemp realpath tput printf cat head sort grep wc; do
     if command -v "$tool" >/dev/null 2>&1; then
       ln -s "$(command -v "$tool")" "$sandbox/$tool"
     fi

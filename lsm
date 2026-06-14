@@ -3,7 +3,8 @@
 # lsm — modern directory listing with summary cards.
 # https://github.com/gabrielcardoso30/lsm
 #
-# Requires: bash 4+, find, awk, column, tput, realpath.
+# Requires: bash 4+ (associative arrays), GNU find (for -printf), awk, tput,
+# realpath. On macOS install via `brew install coreutils bash`.
 
 set -eu
 # pipefail is intentionally NOT set: the `find | sort | head` pipeline below
@@ -44,7 +45,7 @@ MSG_EN=(
   [invalid_sort]="invalid value for --sort"
   [accepted_values]="Accepted values"
   [invalid_top]="--top value must be numeric"
-  [column_missing]="the 'column' command was not found"
+  [awk_missing]="the 'awk' command was not found"
 )
 
 MSG_PT=(
@@ -73,7 +74,7 @@ MSG_PT=(
   [invalid_sort]="valor inválido para --sort"
   [accepted_values]="Valores aceitos"
   [invalid_top]="o valor de --top deve ser numérico"
-  [column_missing]="o comando 'column' não foi encontrado"
+  [awk_missing]="o comando 'awk' não foi encontrado"
 )
 
 MSG_ES=(
@@ -102,7 +103,7 @@ MSG_ES=(
   [invalid_sort]="valor inválido para --sort"
   [accepted_values]="Valores aceptados"
   [invalid_top]="el valor de --top debe ser numérico"
-  [column_missing]="el comando 'column' no se encontró"
+  [awk_missing]="el comando 'awk' no se encontró"
 )
 
 LSM_ACTIVE_LANG="en"
@@ -198,8 +199,8 @@ if [[ ! -d "$DIR" ]]; then
   exit 1
 fi
 
-if ! command -v column >/dev/null 2>&1; then
-  printf "\033[1;31m%s\033[0m %s.\n" "$(t error)" "$(t column_missing)" >&2
+if ! command -v awk >/dev/null 2>&1; then
+  printf "\033[1;31m%s\033[0m %s.\n" "$(t error)" "$(t awk_missing)" >&2
   exit 1
 fi
 
@@ -453,35 +454,56 @@ fi
 
 # ---------------------------------------------------------------------------
 # Table
+#
+# Column alignment is done inline by awk (two-pass: collect, then render) so
+# we do not depend on `column`. Earlier versions piped through `column -t -o`,
+# which is GNU util-linux only; BSD column on macOS rejects -o and breaks the
+# render mid-pipeline.
 # ---------------------------------------------------------------------------
 
-{
-  printf "f%s%s%s%s%s%s\n" "$SEP_IN" "$(t tbl_file)" "$SEP_IN" "$(t tbl_modified)" "$SEP_IN" "$(t tbl_size)"
-  grep -v '^__SUMMARY__' "$TMP_FILE" || true
-} \
-| awk -F"$SEP_IN" -v OFS="$SEP_IN" 'NR==1 {print $2, $3, $4; next} {print $2, $3, $4}' \
-| column -s "$SEP_IN" -t -o "$SEP_OUT" \
-| awk -F"$SEP_OUT" \
+grep -v '^__SUMMARY__' "$TMP_FILE" \
+| awk -F"$SEP_IN" \
     -v use_color="$USE_COLOR" \
     -v file_color="$FILE_COLOR" \
     -v dir_color="$DIR_COLOR" \
     -v date_color="$DATE_COLOR" \
     -v size_color="$SIZE_COLOR" \
     -v reset="$C_RESET" \
-    -v bg_alt="$ROW_BG_ALT" '
-NR == 1 {
-  printf "%s%s%s | %s%s%s | %s%s%s\n", file_color, $1, reset, date_color, $2, reset, size_color, $3, reset
-  sep_len = length($1) + length($2) + length($3) + 6
-  for (i = 0; i < sep_len; i++) printf "-"
-  printf "\n"
-  next
-}
-{
-  is_dir = ($1 ~ /\/[[:space:]]*$/)
-  name_color = is_dir ? dir_color : file_color
-  bg = (NR % 2 == 0) ? bg_alt : ""
-  printf "%s%s%s%s | %s%s%s%s | %s%s%s%s%s\n",
-    bg, name_color, $1, reset,
-    bg, date_color, $2, reset,
-    bg, size_color, $3, reset, reset
-}'
+    -v bg_alt="$ROW_BG_ALT" \
+    -v hdr_name="$(t tbl_file)" \
+    -v hdr_date="$(t tbl_modified)" \
+    -v hdr_size="$(t tbl_size)" '
+  BEGIN {
+    maxn = length(hdr_name)
+    maxd = length(hdr_date)
+    maxs = length(hdr_size)
+  }
+  {
+    kind[NR] = $1
+    name[NR] = $2
+    date_v[NR] = $3
+    size_v[NR] = $4
+    if (length($2) > maxn) maxn = length($2)
+    if (length($3) > maxd) maxd = length($3)
+    if (length($4) > maxs) maxs = length($4)
+  }
+  END {
+    printf "%s%-*s%s | %s%-*s%s | %s%-*s%s\n",
+      file_color, maxn, hdr_name, reset,
+      date_color, maxd, hdr_date, reset,
+      size_color, maxs, hdr_size, reset
+    sep_len = maxn + maxd + maxs + 6
+    for (i = 0; i < sep_len; i++) printf "-"
+    printf "\n"
+
+    for (r = 1; r <= NR; r++) {
+      is_dir = (kind[r] == "d")
+      name_c = is_dir ? dir_color : file_color
+      bg = (r % 2 == 1) ? bg_alt : ""
+      printf "%s%s%-*s%s | %s%s%-*s%s | %s%s%-*s%s%s\n",
+        bg, name_c, maxn, name[r], reset,
+        bg, date_color, maxd, date_v[r], reset,
+        bg, size_color, maxs, size_v[r], reset, reset
+    }
+  }
+'

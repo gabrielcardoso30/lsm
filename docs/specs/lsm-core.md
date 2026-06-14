@@ -107,8 +107,10 @@ From the user's perspective:
 
 - **AC-14**: Given a path that does not exist or is not a directory, when the user runs
   `lsm <path>`, then the command prints an error to stderr and exits with a non-zero status.
-- **AC-15**: Given an environment without the `column` utility, when the user runs `lsm`, then
-  the command prints an error to stderr and exits with a non-zero status.
+- **AC-15**: Given an environment without the `awk` utility, when the user runs `lsm`, then
+  the command prints an error to stderr and exits with a non-zero status. (Note: prior
+  drafts of this AC referenced `column`. `lsm` no longer depends on `column` — table
+  alignment is done inline by `awk` for portability across BSD/GNU userlands.)
 
 ### Localization (i18n)
 

@@ -222,9 +222,9 @@ REAL_DIR="$(realpath "$DIR" 2>/dev/null || printf '%s' "$DIR")"
 # Prefer GNU find (required for -printf). On macOS, install via `brew install
 # coreutils` to get `gfind`. Fail loudly if neither has GNU semantics.
 if command -v gfind >/dev/null 2>&1; then
-  FIND=gfind
+  FIND="gfind"
 else
-  FIND=find
+  FIND="find"
 fi
 if ! "$FIND" / -maxdepth 0 -printf '' 2>/dev/null; then
   printf "\033[1;31m%s\033[0m %s requires GNU find (or 'gfind' from coreutils). " \

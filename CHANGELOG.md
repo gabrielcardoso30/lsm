@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-06-14
+
+### Added
+
+- **Enumerator column** (`#`) — leftmost, 1-based, numbered after sorting and
+  `--top` truncation.
+- **TYPE column** (`TYPE` / `TIPO`) — shows `📁` for directories and `📄` for
+  files. Unicode emojis, no Nerd Font required. See
+  `docs/adr/0005-emoji-icons-and-column-expansion.md`.
+- **Recursive directory sizes** — directory rows now display their total
+  size (via `du -sb`) instead of the v0.1.0 `-` placeholder. The summary
+  card's `Size` total now includes directory contents.
+
+### Changed
+
+- `--sort size` no longer parks directories at the end; they interleave with
+  files based on their recursive byte count.
+- Project positioning updated: the differentiator vs `eza`/`lsd` is
+  **summary cards + i18n + single-file distribution**, not icon abstinence
+  (which was the v0.1.0 framing).
+
+### Documentation
+
+- New ADR-0005 ("Emoji icons and column expansion in v0.2.0") supersedes the
+  "no icons by design" stance from the v0.1.0 README.
+- Glossary expanded: *type icon*, *enumerator column*, *recursive directory
+  size*. *Directory marker* updated to mention the icon.
+
 ## [0.1.0] — 2026-06-14
 
 First public release. The CLI surface defined here is the contract a future
@@ -39,5 +67,6 @@ v1.0 implementation (or v2 rewrite) must honor — see ADR-0002.
   tables), `0004` (bats + shellcheck as the quality bar).
 - Glossary seeded with core domain terms.
 
-[Unreleased]: https://github.com/gabrielcardoso30/lsm/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/gabrielcardoso30/lsm/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/gabrielcardoso30/lsm/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/gabrielcardoso30/lsm/releases/tag/v0.1.0

@@ -53,12 +53,19 @@ From the user's perspective:
 
 - **AC-1**: Given a directory with N regular files and M subdirectories, when the user runs
   `lsm <dir>`, then the summary card reports `Items: N+M`, `Files: N`, `Folders: M`, and
-  `Size` equal to the sum of **file** sizes formatted with the human-readable unit
-  (B/KB/MB/GB, two decimals for non-bytes). Directory sizes do not contribute to the total.
+  `Size` equal to the sum of the displayed entries' sizes (files contribute their own bytes;
+  directories contribute their **recursive** size via `du -sb`), formatted with the
+  human-readable unit (B/KB/MB/GB, two decimals for non-bytes).
 - **AC-1b**: The table includes both files and subdirectories. Each subdirectory row
-  displays its name with a trailing `/`, and its `SIZE` cell renders as `-`.
+  displays its name with a trailing `/`.
 - **AC-1c**: When color is enabled, directory rows render with the directory color (cyan
-  family); when color is disabled, only the trailing `/` distinguishes them.
+  family); when color is disabled, only the trailing `/` and the type icon distinguish them.
+- **AC-1d**: The table includes an `#` column (leftmost) showing a 1-based enumerator
+  reflecting the row's position after sorting and `--top` truncation.
+- **AC-1e**: The table includes a `TYPE` (en) / `TIPO` (pt/es) column showing 📁 for
+  directories and 📄 for files. The icons are Unicode emojis (no Nerd Font required).
+- **AC-1f**: Directory rows in the `SIZE` column display the directory's recursive size in
+  human-readable units, not the placeholder `-` that previous versions used.
 - **AC-2**: Given any directory, when the user runs `lsm <dir>`, then the resolved absolute
   path of `<dir>` is printed in the header (matching `realpath <dir>`).
 - **AC-3**: Given a directory, when the user runs `lsm` without arguments, then `<dir>`
@@ -73,8 +80,8 @@ From the user's perspective:
   then rows are ordered ascending, case-insensitive (directories and files interleave
   alphabetically).
 - **AC-6**: Given entries with distinct sizes, when the user runs `lsm --sort size`,
-  then rows are ordered from largest to smallest by byte count. Directories sort as if
-  their size were 0 and appear after all files.
+  then rows are ordered from largest to smallest by byte count. Directories sort by their
+  recursive size and interleave with files accordingly.
 - **AC-7**: Given any invalid value for `--sort`, when the user runs `lsm --sort foo`, then the
   command exits with a non-zero status and prints an error listing the accepted values.
 
@@ -172,9 +179,14 @@ Confirmed by the maintainer on 2026-06-14 (revisions on the same day reflected b
 - **OQ-2 (resolved)**: Dotfiles are hidden by default. `--all` (or `-a`) opts in. See AC-12
   and AC-13.
 - **OQ-3 (revised, resolved)**: The table lists **both files and subdirectories**.
-  Directories are visually distinguished by a trailing `/` in the name and cyan color when
-  color is enabled. Their `SIZE` cell shows `-` and they do not contribute to the `Size`
-  total. See AC-1, AC-1b, AC-1c, AC-6.
+  Directories are visually distinguished by a trailing `/` in the name, cyan color when
+  color is enabled, and the `📁` icon in the `TYPE` column. Their `SIZE` cell shows the
+  recursive byte count (since v0.2.0) and they contribute to the `Size` total. See
+  AC-1, AC-1b, AC-1c, AC-1f, AC-6.
+
+- **v0.2.0 column expansion**: The table acquired two leading columns — `#` (enumerator)
+  and `TYPE` (📁/📄). Architectural rationale is recorded in
+  `docs/adr/0005-emoji-icons-and-column-expansion.md`. See AC-1d, AC-1e.
 - **OQ-4 (revised, resolved)**: v1 ships with **English (default), Brazilian Portuguese,
   and Spanish** out of the box. Language is selected via `LSM_LANG`, auto-detected from
   `LANG`/`LC_ALL`, or forced via `--lang`. Architecture documented in

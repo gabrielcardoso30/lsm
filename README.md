@@ -23,14 +23,14 @@ to install — just `bash`, `awk`, `find`, and `column`.
 | Size     : 8.51 KB             |  | --lang en|pt|es                |  |                                |
 +--------------------------------+  +--------------------------------+  +--------------------------------+
 
-FILE          | MODIFIED AT          | SIZE
------------------------------------------------------
-README.md     | 2026-06-14 01:10:42  | 2.41 KB
-lsm           | 2026-04-22 12:48:00  | 8.51 KB
-docs/         | 2026-06-14 01:15:30  | -
-test/         | 2026-06-14 01:18:00  | -
-.github/      | 2026-06-14 01:20:00  | -
-CHANGELOG.md  | 2026-06-14 01:22:00  | 1.10 KB
+#  | TYPE | FILE          | MODIFIED AT          | SIZE
+------------------------------------------------------------
+1  | 📄   | README.md     | 2026-06-14 01:10:42  | 2.41 KB
+2  | 📄   | lsm           | 2026-04-22 12:48:00  | 8.51 KB
+3  | 📁   | docs/         | 2026-06-14 01:15:30  | 24.30 KB
+4  | 📁   | test/         | 2026-06-14 01:18:00  | 12.04 KB
+5  | 📁   | .github/      | 2026-06-14 01:20:00  | 3.18 KB
+6  | 📄   | CHANGELOG.md  | 2026-06-14 01:22:00  | 1.10 KB
 ...
 ```
 
@@ -130,23 +130,24 @@ and send a PR that adds a `MSG_<XX>` table to `lsm`.
 | | `lsm` | `eza` / `lsd` |
 | --- | --- | --- |
 | Focus | summary card + sortable table | rich file table |
-| Icons | no (by design) | yes |
+| Icons | Unicode emoji (no Nerd Font) | Nerd Font glyphs |
 | Install | single bash script, no fonts | binary + Nerd Font |
 | Surface area | 5 flags | dozens |
 | Audience | "show me this folder" | drop-in replacement for `ls` |
-| i18n out of the box | en / pt / es (v1) | en only |
+| i18n out of the box | en / pt / es | en only |
 
 `lsm` does not try to win the `ls -l` arms race. Use `ls`, `eza`, or `lsd` for
 that. Use `lsm` when you want to *understand* a directory in one glance.
 
 ## Roadmap
 
-- v0.1.0 — current bash implementation, English labels, MIT license, CI with
+- v0.1.0 ✅ — bash implementation, en/pt/es i18n, MIT license, CI with
   `shellcheck` + `bats-core`, one-line installer.
-- v0.2.0 — distro packages (AUR, Homebrew, `.deb`), `--all` for hidden files,
-  optional listing of subdirectories in the table.
-- v0.3.0+ — JSON output (`--json`), shell completions (bash/zsh/fish), themes.
-- v1.0.0 — stability guarantee on flags and exit codes.
+- v0.2.0 ✅ — enumerator column, TYPE column with emoji icons, recursive
+  directory sizes.
+- v0.3.0 — distro packages (AUR, Homebrew, `.deb`), `--no-icons` ASCII
+  fallback, JSON output (`--json`), shell completions (bash/zsh/fish).
+- v1.0.0 — stability guarantee on flags, columns, and exit codes.
 
 ## Contributing
 

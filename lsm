@@ -37,6 +37,8 @@ MSG_EN=(
   [on]="on"
   [off]="off"
   [all]="all"
+  [tbl_idx]="#"
+  [tbl_type]="TYPE"
   [tbl_file]="FILE"
   [tbl_modified]="MODIFIED AT"
   [tbl_size]="SIZE"
@@ -66,6 +68,8 @@ MSG_PT=(
   [on]="ligada"
   [off]="desligada"
   [all]="todos"
+  [tbl_idx]="#"
+  [tbl_type]="TIPO"
   [tbl_file]="ARQUIVO"
   [tbl_modified]="MODIFICADO EM"
   [tbl_size]="TAMANHO"
@@ -95,6 +99,8 @@ MSG_ES=(
   [on]="activado"
   [off]="desactivado"
   [all]="todos"
+  [tbl_idx]="#"
+  [tbl_type]="TIPO"
   [tbl_file]="ARCHIVO"
   [tbl_modified]="MODIFICADO"
   [tbl_size]="TAMAÑO"
@@ -273,8 +279,16 @@ trap 'rm -f "$TMP_FILE"' EXIT
 {
   "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" \
     -printf 'f|%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%s\n' 2>/dev/null
+
+  # Directories: emit one line per dir with full path, then sum bytes via du.
+  # `du -sb` is GNU coreutils; required regardless because we already need
+  # GNU find for -printf.
   "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" \
-    -printf 'd|%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|-1\n' 2>/dev/null
+    -printf '%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%p\n' 2>/dev/null \
+    | while IFS='|' read -r d_mtime d_name d_date d_path; do
+        d_bytes=$(du -sb "$d_path" 2>/dev/null | awk '{print $1+0; exit}')
+        printf 'd|%s|%s|%s|%s\n' "$d_mtime" "$d_name" "$d_date" "${d_bytes:-0}"
+      done
 } \
 | sort "${SORT_ARGS[@]}" \
 | { if [[ -n "$TOP_N" ]]; then head -n "$TOP_N"; else cat; fi; } \
@@ -287,17 +301,13 @@ trap 'rm -f "$TMP_FILE"' EXIT
       split($4, dt, "\\.")
       data = dt[1]
 
-      if (kind == "d") {
-        nome = nome "/"
-        tamanho = "-"
-      } else {
-        bytes = $5 + 0
-        total_bytes += bytes
-        if (bytes >= 1024*1024*1024)      tamanho = sprintf("%.2f GB", bytes/1024/1024/1024)
-        else if (bytes >= 1024*1024)      tamanho = sprintf("%.2f MB", bytes/1024/1024)
-        else if (bytes >= 1024)           tamanho = sprintf("%.2f KB", bytes/1024)
-        else                              tamanho = sprintf("%d B", bytes)
-      }
+      bytes = $5 + 0
+      total_bytes += bytes
+      if (kind == "d") nome = nome "/"
+      if (bytes >= 1024*1024*1024)      tamanho = sprintf("%.2f GB", bytes/1024/1024/1024)
+      else if (bytes >= 1024*1024)      tamanho = sprintf("%.2f MB", bytes/1024/1024)
+      else if (bytes >= 1024)           tamanho = sprintf("%.2f KB", bytes/1024)
+      else                              tamanho = sprintf("%d B", bytes)
 
       printf "%s%s%s%s%s%s%s\n", kind, sep, nome, sep, data, sep, tamanho
       linhas++
@@ -470,6 +480,8 @@ grep -v '^__SUMMARY__' "$TMP_FILE" \
     -v size_color="$SIZE_COLOR" \
     -v reset="$C_RESET" \
     -v bg_alt="$ROW_BG_ALT" \
+    -v hdr_idx="$(t tbl_idx)" \
+    -v hdr_type="$(t tbl_type)" \
     -v hdr_name="$(t tbl_file)" \
     -v hdr_date="$(t tbl_modified)" \
     -v hdr_size="$(t tbl_size)" '
@@ -477,6 +489,11 @@ grep -v '^__SUMMARY__' "$TMP_FILE" \
     maxn = length(hdr_name)
     maxd = length(hdr_date)
     maxs = length(hdr_size)
+    # Emoji icons render as 2 terminal cells but awk length() reports 1.
+    # Hardcode a visual width of 2 for the icon, then take the larger of
+    # that and the header label as the column width.
+    icon_visual = 2
+    type_w = (length(hdr_type) > icon_visual) ? length(hdr_type) : icon_visual
   }
   {
     kind[NR] = $1
@@ -488,22 +505,32 @@ grep -v '^__SUMMARY__' "$TMP_FILE" \
     if (length($4) > maxs) maxs = length($4)
   }
   END {
-    printf "%s%-*s%s | %s%-*s%s | %s%-*s%s\n",
+    idx_w = length(hdr_idx)
+    if (length("" NR) > idx_w) idx_w = length("" NR)
+
+    printf "%-*s | %-*s | %s%-*s%s | %s%-*s%s | %s%-*s%s\n",
+      idx_w, hdr_idx,
+      type_w, hdr_type,
       file_color, maxn, hdr_name, reset,
       date_color, maxd, hdr_date, reset,
       size_color, maxs, hdr_size, reset
-    sep_len = maxn + maxd + maxs + 6
+    sep_len = idx_w + type_w + maxn + maxd + maxs + 12
     for (i = 0; i < sep_len; i++) printf "-"
     printf "\n"
 
     for (r = 1; r <= NR; r++) {
       is_dir = (kind[r] == "d")
+      icon = is_dir ? "📁" : "📄"
       name_c = is_dir ? dir_color : file_color
       bg = (r % 2 == 1) ? bg_alt : ""
-      printf "%s%s%-*s%s | %s%s%-*s%s | %s%s%-*s%s%s\n",
+      # Icon contributes 2 visual cells; pad with (type_w - icon_visual)
+      # trailing spaces so the column lines up under the header.
+      printf "%s%-*d%s | %s%s%*s%s | %s%s%-*s%s | %s%s%-*s%s | %s%s%-*s%s\n",
+        bg, idx_w, r, reset,
+        bg, icon, type_w - icon_visual, "", reset,
         bg, name_c, maxn, name[r], reset,
         bg, date_color, maxd, date_v[r], reset,
-        bg, size_color, maxs, size_v[r], reset, reset
+        bg, size_color, maxs, size_v[r], reset
     }
   }
 '

@@ -72,10 +72,43 @@ default. Unsupported codes silently fall back to `en`.
 ## Directory marker
 
 **Definition.** The trailing `/` appended to directory names in the file
-table, plus the cyan color applied when color is enabled. The marker is the
-visual signal that a row represents a subdirectory rather than a regular file.
+table, plus the cyan color applied when color is enabled, plus the `📁`
+emoji in the TYPE column (since v0.2.0). Together they form the visual
+signal that a row represents a subdirectory rather than a regular file.
 
 **Example.** `docs/` in the FILE column of `lsm`'s output.
 
-**Related.** summary card.
+**Related.** summary card, type icon, enumerator column.
+
+## Type icon
+
+**Definition.** A Unicode emoji rendered in the `TYPE`/`TIPO` table column
+indicating whether the row is a regular file (`📄`, `U+1F4C4`) or a directory
+(`📁`, `U+1F4C1`). Introduced in v0.2.0. Renders in every modern terminal
+without requiring a Nerd Font. See ADR-0005.
+
+**Example.** `📁` on a `docs/` row.
+
+**Related.** directory marker.
+
+## Enumerator column
+
+**Definition.** The leftmost table column, rendered as `#`, that shows the
+1-based row index after sorting and `--top` truncation. Introduced in v0.2.0.
+
+**Example.** `1`, `2`, `3` on consecutive rows.
+
+**Related.** sort key, top-N.
+
+## Recursive directory size
+
+**Definition.** The total byte count of a directory's contents, computed via
+`du -sb <dir>` (GNU coreutils). Introduced in v0.2.0; v0.1.0 displayed `-`
+for directories. The recursive size contributes to the `Size` total in the
+summary card and to the `--sort size` ordering.
+
+**Example.** `4.78 KB` on a `subdir/` row holding an 800-byte file (filesystem
+inode block accounts for the rest).
+
+**Related.** sort key.
 

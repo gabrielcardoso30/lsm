@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    name: shellcheck + bats (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install shellcheck and bats-core (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck bats
+
+      - name: Install shellcheck and bats-core (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install shellcheck bats-core
+
+      - name: Print versions
+        run: |
+          bash --version | head -1
+          shellcheck --version | head -2
+          bats --version
+
+      - name: Run shellcheck
+        run: shellcheck lsm
+
+      - name: Run bats
+        run: bats test/

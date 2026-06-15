@@ -34,14 +34,14 @@ teardown() { cleanup_fixture; }
 }
 
 @test "AC-1d: rows show a 1-based enumerator (first column)" {
-  lsm_run --no-color --sort name "$FIXTURE_DIR"
+  # `--no-hidden` keeps the visible-only fixture set so this AC can keep
+  # asserting "alpha.txt is row 1 when sorted by name". With the v0.3.0
+  # default (hidden shown) the leading rows under sort name would be
+  # `.hidden` and `.secret/`, shifting alpha.txt to position 3.
+  lsm_run --no-color --no-hidden --sort name "$FIXTURE_DIR"
 
   [ "$status" -eq 0 ]
-  # With sort name, the first data row is alpha.txt; it must be enumerator 1.
-  local first_data_line
-  first_data_line="$(printf '%s\n' "$output" | grep -E '\| 📄 \|.*alpha\.txt' | head -n 1)"
-  # Tolerate either emoji or ascii encoding for the icon column; the IDX is
-  # leftmost, so the line must begin with `1 |`.
+  # The IDX column is leftmost, so the alpha.txt row must begin with `1 |`.
   [[ "$(printf '%s\n' "$output" | grep -E 'alpha\.txt' | head -n 1)" =~ ^1[[:space:]]*\| ]]
 }
 

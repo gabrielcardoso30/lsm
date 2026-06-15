@@ -53,9 +53,12 @@ cleanup_fixture() {
 
 # lsm_run [args...]
 #   Wrapper around `run "$LSM_BIN"` that ensures a hermetic environment:
-#   forces wide terminal so the 3-card layout is exercised, disables LSM_LANG
-#   inheritance, and forces a POSIX-ish LANG so tests stay deterministic unless
-#   explicitly overridden by the caller.
+#   forces wide terminal so the 3-card layout is exercised and pins the
+#   locale to English/C.UTF-8 so assertions against the rendered labels
+#   ("Files", "Folders", "Size", "Shown", "Legend:", etc.) are reproducible
+#   regardless of the developer's shell `$LANG` or the CI runner default.
+#   Tests that want to exercise pt/es i18n do NOT use this helper and call
+#   `run "$LSM_BIN"` directly with their own LSM_LANG.
 lsm_run() {
-  COLUMNS=140 LSM_LANG="${LSM_LANG-}" LANG="${LANG-C.UTF-8}" run "$LSM_BIN" "$@"
+  COLUMNS=140 LSM_LANG="" LANG=C.UTF-8 LC_ALL=C.UTF-8 run "$LSM_BIN" "$@"
 }

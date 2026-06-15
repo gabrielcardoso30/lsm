@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`lsm` no longer aborts silently on directories containing a
+  permission-denied subtree** (e.g., `~/` with root-owned container
+  volumes under `~/projetos/.../docker-compose/`). The parallel
+  `du -sb` pass introduced by ADR-0007 propagated `xargs`' exit 123
+  to the outer `set -e`, killing the script before the header could
+  even print. The fix tolerates the xargs exit code so partially
+  scanned directories report a slightly underestimated size and
+  everything else renders as usual.
+
 ### Added
 
 - **`--no-hidden` flag** — excludes dotfiles and dot-prefixed directories

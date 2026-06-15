@@ -78,3 +78,23 @@ teardown() { cleanup_fixture; }
   [ "$status" -eq 0 ]
   [[ "$output" == *"subdir/"* ]]
 }
+
+@test "AC-1i: a permission-denied subtree does not abort the whole listing" {
+  # Regression for the silent failure on ~/: a single root-owned (or
+  # mode-000) subdir under any top-level dir made `du -sb` exit 1, xargs
+  # aggregated that into 123, and `set -e` killed the script before the
+  # header even printed. The fix is `|| true` after the xargs pipeline.
+  mkdir -p "$FIXTURE_DIR/locked/inner"
+  chmod 000 "$FIXTURE_DIR/locked/inner"
+
+  lsm_run --no-color "$FIXTURE_DIR"
+  local saved_status="$status"
+  local saved_output="$output"
+
+  # Restore so teardown's rm -rf can succeed.
+  chmod 700 "$FIXTURE_DIR/locked/inner"
+
+  [ "$saved_status" -eq 0 ]
+  [[ "$saved_output" == *"locked/"* ]]
+  [[ "$saved_output" == *"end of listing"* ]]
+}

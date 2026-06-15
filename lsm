@@ -341,9 +341,17 @@ JOBS="$(resolve_jobs)"
 # will render `-` and dirs will contribute 0 bytes to the summary total).
 # `xargs -0 -n1 -P` is portable across GNU and BSD userlands (Linux +
 # macOS). See ADR-0007.
+#
+# `|| true` is load-bearing: `du -sb` exits 1 on any subtree with a
+# permission-denied entry (e.g., root-owned container volumes under
+# ~/projetos), and `xargs` aggregates that into exit 123. Without the
+# guard, `set -e` would abort the script before the header is even
+# printed. The lines `du` did manage to write are still captured — affected
+# directories get a slightly underestimated size, which is the right
+# graceful-degradation behavior for a read-only listing CLI.
 if [[ $SHALLOW -eq 0 && -s "$DIR_META_FILE" ]]; then
   "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" -print0 2>/dev/null \
-    | xargs -0 -n1 -P"$JOBS" du -sb 2>/dev/null > "$DIR_SIZE_FILE"
+    | xargs -0 -n1 -P"$JOBS" du -sb 2>/dev/null > "$DIR_SIZE_FILE" || true
 fi
 
 {

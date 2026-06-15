@@ -19,7 +19,7 @@ and `column`, and avoid carrying a heavy runtime.
 
 ## What
 
-`lsm [PATH] [--sort time|name|size] [--top N] [--all] [--no-color] [--lang en|pt|es]`
+`lsm [PATH] [--sort time|name|size] [--top N] [--no-hidden] [--no-color] [--lang en|pt|es]`
 
 From the user's perspective:
 
@@ -30,8 +30,11 @@ From the user's perspective:
   `name` sorts case-insensitive ascending; `size` sorts largest first.
 - `--top N` truncates the table to the first `N` rows after sorting. The summary card still
   reports `Shown: N` against the directory's true totals.
-- `--all` (or `-a`) includes dotfiles (hidden entries starting with `.`). Default behavior
-  hides them, matching `ls`'s mental model. Applies to both files and directories.
+- Hidden entries (names starting with `.`) are **shown by default** since v0.3.0 and
+  rendered with a dim gray color so they remain visually distinct from regular files
+  and directories. `--no-hidden` excludes them from both the table and the summary
+  totals. The legacy `--all` / `-a` flag is still parsed as a silent no-op for backward
+  compatibility (it now matches the default behavior).
 - `--no-color` disables ANSI escapes for environments without color support (CI logs, pipes,
   terminals without truecolor).
 - The table lists both **regular files and subdirectories**. Directories are visually
@@ -66,6 +69,18 @@ From the user's perspective:
   directories and 📄 for files. The icons are Unicode emojis (no Nerd Font required).
 - **AC-1f**: Directory rows in the `SIZE` column display the directory's recursive size in
   human-readable units, not the placeholder `-` that previous versions used.
+- **AC-1g** (color legend): When color is enabled, the output includes a one-line color
+  legend rendered between the summary cards and the table header. The legend contains
+  three labeled swatches whose words use the exact same colors applied to the table:
+  `filename` in the file color, `folder/` in the directory color, and `.hidden` in the
+  hidden-entry gray. The legend is suppressed under `--no-color` because the swatch
+  words rely on ANSI to carry signal.
+- **AC-1h** (footer): The output always ends with a closing footer mirroring the header:
+  a horizontal divider, a recap line of the form
+  `lsm · <Shown>: N · <Size>: X · <Sort>: Y · <end of listing>`, and a second divider.
+  Counts are post-`--top` (i.e., they describe what was actually rendered, not the
+  directory's true totals — the summary card already reports those). Labels are
+  localized via i18n.
 - **AC-2**: Given any directory, when the user runs `lsm <dir>`, then the resolved absolute
   path of `<dir>` is printed in the header (matching `realpath <dir>`).
 - **AC-3**: Given a directory, when the user runs `lsm` without arguments, then `<dir>`
@@ -104,11 +119,18 @@ From the user's perspective:
 ### Hidden entries
 
 - **AC-12**: Given a directory containing dotfiles and dot-prefixed subdirectories, when the
-  user runs `lsm` without `--all`, then all entries starting with `.` are excluded from the
-  table and from the summary totals (`Items`, `Files`, `Folders`, `Size`).
-- **AC-13**: Given the same directory, when the user runs `lsm --all` (or `lsm -a`), then
-  dot-prefixed files and directories are included in the table and counted toward all
-  totals.
+  user runs `lsm` without any hidden-related flag, then all entries starting with `.` are
+  included in the table and counted toward the summary totals (`Items`, `Files`, `Folders`,
+  `Size`). Hidden entries are shown by default since v0.3.0.
+- **AC-12b**: Given the same directory, when color is enabled, then every row whose name
+  starts with `.` (file or directory) renders the name column with a dim gray color
+  (256-color index 244 or equivalent) instead of the regular file/directory color, so
+  hidden entries are visually distinguishable at a glance.
+- **AC-13**: Given the same directory, when the user runs `lsm --no-hidden`, then dot-prefixed
+  files and directories are excluded from the table and from all summary totals.
+- **AC-13b**: Given the same directory, when the user runs `lsm --all` or `lsm -a`, then the
+  output is identical to running `lsm` with no flag — both flags are accepted as silent
+  no-ops kept for backward compatibility with v0.1.x / v0.2.x scripts.
 
 ### Errors
 
@@ -136,6 +158,12 @@ From the user's perspective:
   `Mostrados`, `Orden`, `Límite`, `Color`, `Parámetros disponibles`,
   `Parámetros actuales`, `ARCHIVO`, `MODIFICADO`, `TAMAÑO`, `todos`, `activado`,
   `desactivado`, `Error:`, `Opción inválida`, `Valores aceptados`).
+- **AC-16h** (legend + footer i18n): The color legend label (`Legend:` / `Legenda:` /
+  `Leyenda:`), the swatch words (`filename` / `arquivo` / `archivo`,
+  `folder/` / `pasta/` / `carpeta/`, `.hidden` / `.oculto` / `.oculto`), and the
+  footer's closing token (`end of listing` / `fim da listagem` / `fin del listado`)
+  all follow the active language with the same fallback rules as every other
+  i18n token (see AC-16f).
 - **AC-16d**: Given `LSM_LANG` is unset and `LANG=pt_BR.UTF-8`, when the user runs `lsm`,
   then labels render in Brazilian Portuguese (auto-detection from `LANG`).
 - **AC-16e**: Given any combination of env vars, when the user runs `lsm --lang <code>`,
@@ -176,8 +204,13 @@ Confirmed by the maintainer on 2026-06-14 (revisions on the same day reflected b
 
 - **OQ-1 (resolved)**: Default sort is `time` (mtime, newest first). Rationale: `lsm`
   answers "what changed here?", which is distinct from `ls`'s alphabetical default.
-- **OQ-2 (resolved)**: Dotfiles are hidden by default. `--all` (or `-a`) opts in. See AC-12
-  and AC-13.
+- **OQ-2 (revised, resolved)**: Dotfiles are **shown by default** since v0.3.0, rendered
+  with a dim gray color so they remain visually distinct. `--no-hidden` opts out. The
+  v0.1.x / v0.2.x default ("hidden, opt in via `--all`") was reversed because real-world
+  usage on user-owned directories (home folders, project repos, container volumes) almost
+  always wants the dotfiles visible — making the visible path the one that requires an
+  extra flag added friction without clear benefit. `--all` / `-a` is preserved as a no-op
+  alias. See AC-12, AC-12b, AC-13, AC-13b and `docs/adr/0006-show-hidden-by-default.md`.
 - **OQ-3 (revised, resolved)**: The table lists **both files and subdirectories**.
   Directories are visually distinguished by a trailing `/` in the name, cyan color when
   color is enabled, and the `📁` icon in the `TYPE` column. Their `SIZE` cell shows the

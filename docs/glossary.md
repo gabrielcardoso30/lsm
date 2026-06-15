@@ -112,3 +112,45 @@ inode block accounts for the rest).
 
 **Related.** sort key.
 
+## Color legend
+
+**Definition.** A single-line key rendered between the summary cards and
+the table header (since v0.3.0) when color is enabled. Lists three colored
+swatch words — `filename`, `folder/`, `.hidden` — drawn with the exact
+colors applied to the table's `FILE` column, so the user can map each row
+back to its category at a glance. Suppressed under `--no-color` because
+the swatches rely on ANSI to carry signal. Labels are i18n-aware.
+
+**Example.** `Legend:  filename  folder/  .hidden` rendered with yellow,
+cyan, and gray respectively.
+
+**Related.** hidden entry, directory marker, message table.
+
+## Footer
+
+**Definition.** The closing block that mirrors the header to give the
+output a clean visual boundary before the next shell prompt (since v0.3.0).
+Three lines: a horizontal divider, a recap line of the form
+`lsm · <Shown>: N · <Size>: X · <Sort>: Y · <end of listing>`, and a
+second divider. The counts are post-`--top`, matching exactly what the
+user just saw in the table. Labels are i18n-aware.
+
+**Example.** ` lsm · Shown: 6 · Size: 14.98 KB · Sort: time · end of listing`
+
+**Related.** summary card, top-N, message table.
+
+## Hidden entry
+
+**Definition.** Any file or directory whose name starts with a `.` (dot).
+Examples: `.gitignore`, `.env.example`, `.git/`, `.github/`, `.config/`.
+Since v0.3.0 `lsm` shows hidden entries by default and renders them with a
+dim 256-color gray (`38;5;244`) in the `FILE` column so they remain
+visually subdued next to regular content. `--no-hidden` excludes them
+entirely from the table and from the summary totals. The legacy `--all` /
+`-a` flag is preserved as a silent no-op for backward compatibility. See
+`docs/adr/0006-show-hidden-by-default.md`.
+
+**Example.** `.gitignore` rendered in dim gray on a project repo listing.
+
+**Related.** summary card, directory marker.
+

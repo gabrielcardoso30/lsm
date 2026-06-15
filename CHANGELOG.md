@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`--no-hidden` flag** — excludes dotfiles and dot-prefixed directories
+  from both the table and the summary totals. Replaces the v0.2.x role of
+  `--all` (which was opt-in for showing hidden entries).
+- **Dim gray rendering for hidden entries** — names starting with `.` are
+  drawn with the 256-color gray `38;5;244` so they remain visually
+  subdued next to regular files and directories. See AC-12b.
+- **Color legend** — one-line key between the summary cards and the table
+  header with colored swatch words (`filename`, `folder/`, `.hidden`) using
+  the same colors the table applies. Suppressed under `--no-color`. See
+  AC-1g.
+- **Footer block** — closing horizontal divider, recap line
+  (`lsm · Shown: N · Size: X · Sort: Y · end of listing`), second divider.
+  Mirrors the header for a balanced visual boundary before the next shell
+  prompt. Counts are post-`--top` to match what the user actually sees.
+  See AC-1h.
+- **i18n keys** for the legend and footer in all three languages:
+  `legend`, `legend_file`, `legend_directory`, `legend_hidden`,
+  `footer_end`. See AC-16h.
+
+### Changed
+
+- **BREAKING (pre-1.0 minor): hidden entries are now shown by default.**
+  Running `lsm` on a directory containing `.git/`, `.gitignore`,
+  `.config/`, etc. now lists those entries and counts them toward `Items`,
+  `Files`, `Folders`, and `Size` in the summary card. The previous
+  "hidden by default, opt-in via `--all`" behavior was reversed because
+  the most common targets (home directories, project repos) almost
+  always want the dotfiles visible — making the visible path the one
+  that required an extra flag added friction with no clear benefit. See
+  `docs/adr/0006-show-hidden-by-default.md`. To restore the v0.2.x
+  behavior, pass `--no-hidden`.
+- The "Available flags" summary card now advertises `--no-hidden` instead
+  of `--all / -a`.
+
+### Deprecated
+
+- `--all` and `-a` are kept as silent no-ops and now match the default
+  behavior. They are no longer advertised in the summary card and may be
+  removed in a future major release.
+
+### Documentation
+
+- New ADR-0006 ("Show hidden entries by default and dim them in gray").
+- Spec updated: AC-12 / AC-13 rewritten, AC-12b and AC-13b added, OQ-2
+  revised. AC-1g (legend), AC-1h (footer) and AC-16h (legend + footer
+  i18n) added.
+- Glossary expanded with the *hidden entry*, *color legend*, and *footer*
+  terms.
+
 ## [0.2.1] — 2026-06-14
 
 ### Fixed

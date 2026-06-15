@@ -18,10 +18,12 @@ to install — just `bash`, `awk`, `find`, and `column`.
 |--------------------------------|  |--------------------------------|  |--------------------------------|
 | Shown    : 6                   |  | --sort [time|name|size]        |  | Sort  : time                   |
 | Items    : 12                  |  | --top N                        |  | Top   : 6                      |
-| Files    : 7                   |  | --all / -a                     |  | Color : on                     |
+| Files    : 7                   |  | --no-hidden                    |  | Color : on                     |
 | Folders  : 5                   |  | --no-color                     |  |                                |
 | Size     : 8.51 KB             |  | --lang en|pt|es                |  |                                |
 +--------------------------------+  +--------------------------------+  +--------------------------------+
+
+Legend:  filename  folder/  .hidden
 
 #  | TYPE | FILE          | MODIFIED AT          | SIZE
 ------------------------------------------------------------
@@ -32,6 +34,10 @@ to install — just `bash`, `awk`, `find`, and `column`.
 5  | 📁   | .github/      | 2026-06-14 01:20:00  | 3.18 KB
 6  | 📄   | CHANGELOG.md  | 2026-06-14 01:22:00  | 1.10 KB
 ...
+
+-----------------------------------------------------------------------------------
+ lsm · Shown: 6 · Size: 8.51 KB · Sort: time · end of listing
+-----------------------------------------------------------------------------------
 ```
 
 ## Why lsm?
@@ -96,20 +102,24 @@ lsm /var/log                 # any directory
 lsm --sort name              # sort by filename (case-insensitive ascending)
 lsm --sort size              # sort by size (largest first)
 lsm --top 10                 # show only the first 10 rows after sorting
-lsm --all                    # include dotfiles and dot-directories
+lsm --no-hidden              # exclude dotfiles and dot-directories
 lsm --no-color               # disable ANSI escapes (CI, pipes, dumb terminals)
 lsm --lang pt                # render labels in Brazilian Portuguese
 LSM_LANG=es lsm              # or via env var (en, pt, es)
-lsm /var/log --sort size --top 5 --all --no-color
+lsm /var/log --sort size --top 5 --no-color
 ```
 
 | Flag | Values | Default | Description |
 | --- | --- | --- | --- |
 | `--sort` | `time` \| `name` \| `size` | `time` | Column the table is sorted by. |
 | `--top` | positive integer | unset | Truncate the table to the first N rows. |
-| `--all`, `-a` | — | off | Include dotfiles and dot-directories. |
+| `--no-hidden` | — | off | Exclude dotfiles and dot-directories. Hidden entries are **shown by default since v0.3.0** and rendered in dim gray. |
 | `--no-color` | — | colors on | Disable ANSI color output. |
 | `--lang` | `en` \| `pt` \| `es` | auto | Override language detection. |
+
+> Legacy `--all` / `-a` from v0.1.x / v0.2.x is accepted as a silent no-op
+> (its previous behavior — "include dotfiles" — is now the default). It is
+> not advertised in `--help` output and may be removed in a future major.
 
 ## Languages
 
@@ -145,8 +155,10 @@ that. Use `lsm` when you want to *understand* a directory in one glance.
   `shellcheck` + `bats-core`, one-line installer.
 - v0.2.0 ✅ — enumerator column, TYPE column with emoji icons, recursive
   directory sizes.
-- v0.3.0 — distro packages (AUR, Homebrew, `.deb`), `--no-icons` ASCII
-  fallback, JSON output (`--json`), shell completions (bash/zsh/fish).
+- v0.3.0 — hidden entries shown by default with dim gray rendering,
+  `--no-hidden` opt-out (ADR-0006). Planned next: distro packages
+  (AUR, Homebrew, `.deb`), `--no-icons` ASCII fallback, JSON output
+  (`--json`), shell completions (bash/zsh/fish).
 - v1.0.0 — stability guarantee on flags, columns, and exit codes.
 
 ## Contributing

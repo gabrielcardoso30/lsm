@@ -10,10 +10,10 @@ teardown() { cleanup_fixture; }
   lsm_run --no-color "$FIXTURE_DIR"
 
   [ "$status" -eq 0 ]
-  # 3 files + 1 folder (dotfiles excluded by default)
-  [[ "$output" == *"Files"*"3"* ]]
-  [[ "$output" == *"Folders"*"1"* ]]
-  [[ "$output" == *"Items"*"4"* ]]
+  # Since v0.3.0 hidden entries are shown by default: 4 files + 2 folders = 6.
+  [[ "$output" =~ Files[[:space:]]*:[[:space:]]*4 ]]
+  [[ "$output" =~ Folders[[:space:]]*:[[:space:]]*2 ]]
+  [[ "$output" =~ Items[[:space:]]*:[[:space:]]*6 ]]
 }
 
 @test "AC-1b: subdirectories appear in the table with a trailing slash" {

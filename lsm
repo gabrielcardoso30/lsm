@@ -163,6 +163,10 @@ USE_COLOR=1
 # `--all` / `-a` are kept as silent no-ops for backward compatibility with
 # v0.1.x / v0.2.x scripts. See docs/adr/0006-show-hidden-by-default.md.
 SHOW_ALL=1
+# When SHALLOW=1, the recursive `du -sb` on each subdirectory is skipped
+# entirely. Directory rows render `-` for SIZE and contribute 0 to the
+# summary Size total. See docs/adr/0007-parallel-du-and-shallow-flag.md.
+SHALLOW=0
 LANG_FLAG=""
 
 while [[ $# -gt 0 ]]; do
@@ -186,6 +190,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --no-hidden)
       SHOW_ALL=0
+      shift
+      ;;
+    --shallow)
+      SHALLOW=1
       shift
       ;;
     --no-color)
@@ -297,21 +305,77 @@ esac
 
 SEP_IN=$'\t'
 TMP_FILE="$(mktemp)"
-trap 'rm -f "$TMP_FILE"' EXIT
+DIR_META_FILE="$(mktemp)"
+DIR_SIZE_FILE="$(mktemp)"
+trap 'rm -f "$TMP_FILE" "$DIR_META_FILE" "$DIR_SIZE_FILE"' EXIT
+
+# Resolve the parallelism level for the directory `du -sb` pass. Capped at
+# 8 because past that the bottleneck is filesystem stat IO, not CPU, and
+# extra workers start hurting on spinning rust. Users can opt out of the
+# cap by exporting LSM_JOBS explicitly. See ADR-0007.
+resolve_jobs() {
+  local n=""
+  if [[ -n "${LSM_JOBS:-}" && "$LSM_JOBS" =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s' "$LSM_JOBS"
+    return
+  fi
+  if command -v nproc >/dev/null 2>&1; then
+    n="$(nproc 2>/dev/null || true)"
+  fi
+  if [[ -z "$n" ]] && command -v sysctl >/dev/null 2>&1; then
+    n="$(sysctl -n hw.ncpu 2>/dev/null || true)"
+  fi
+  [[ -z "$n" || ! "$n" =~ ^[0-9]+$ ]] && n=4
+  (( n > 8 )) && n=8
+  (( n < 1 )) && n=1
+  printf '%s' "$n"
+}
+JOBS="$(resolve_jobs)"
+
+# Stage 1: cheap metadata pass for directories (no `du` runs here). Used by
+# the join step below.
+"$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" \
+  -printf '%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%p\n' 2>/dev/null > "$DIR_META_FILE"
+
+# Stage 2: parallel `du -sb`. Skipped under --shallow (the dir SIZE cell
+# will render `-` and dirs will contribute 0 bytes to the summary total).
+# `xargs -0 -n1 -P` is portable across GNU and BSD userlands (Linux +
+# macOS). See ADR-0007.
+if [[ $SHALLOW -eq 0 && -s "$DIR_META_FILE" ]]; then
+  "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" -print0 2>/dev/null \
+    | xargs -0 -n1 -P"$JOBS" du -sb 2>/dev/null > "$DIR_SIZE_FILE"
+fi
 
 {
   "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type f "${FIND_HIDDEN_FILTER[@]}" \
     -printf 'f|%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%s\n' 2>/dev/null
 
-  # Directories: emit one line per dir with full path, then sum bytes via du.
-  # `du -sb` is GNU coreutils; required regardless because we already need
-  # GNU find for -printf.
-  "$FIND" "$DIR" -maxdepth 1 -mindepth 1 -type d "${FIND_HIDDEN_FILTER[@]}" \
-    -printf '%T@|%f|%TY-%Tm-%Td %TH:%TM:%TS|%p\n' 2>/dev/null \
-    | while IFS='|' read -r d_mtime d_name d_date d_path; do
-        d_bytes=$(du -sb "$d_path" 2>/dev/null | awk '{print $1+0; exit}')
-        printf 'd|%s|%s|%s|%s\n' "$d_mtime" "$d_name" "$d_date" "${d_bytes:-0}"
-      done
+  # Stage 3: join metadata with parallel-du sizes. The size map is
+  # pre-loaded from DIR_SIZE_FILE via getline so the main awk input is
+  # purely the metadata file — this sidesteps the `NR == FNR` trap, which
+  # breaks when the size file is empty (e.g., under --shallow or when
+  # there are no subdirectories).
+  if [[ -s "$DIR_META_FILE" ]]; then
+    awk -v shallow="$SHALLOW" -v sizefile="$DIR_SIZE_FILE" '
+      BEGIN {
+        while ((getline line < sizefile) > 0) {
+          tab = index(line, "\t")
+          if (tab > 0) sizes[substr(line, tab + 1)] = substr(line, 1, tab - 1) + 0
+        }
+        close(sizefile)
+      }
+      {
+        # Metadata records are mtime|name|date|path.
+        n = split($0, m, "|")
+        if (n < 4) next
+        path = m[4]
+        if (shallow == 1) bytes = -1
+        else if (path in sizes) bytes = sizes[path]
+        else bytes = 0
+        printf "d|%s|%s|%s|%s\n", m[1], m[2], m[3], bytes
+      }
+    ' "$DIR_META_FILE"
+  fi
 } \
 | sort "${SORT_ARGS[@]}" \
 | { if [[ -n "$TOP_N" ]]; then head -n "$TOP_N"; else cat; fi; } \
@@ -325,12 +389,18 @@ trap 'rm -f "$TMP_FILE"' EXIT
       data = dt[1]
 
       bytes = $5 + 0
-      total_bytes += bytes
       if (kind == "d") nome = nome "/"
-      if (bytes >= 1024*1024*1024)      tamanho = sprintf("%.2f GB", bytes/1024/1024/1024)
-      else if (bytes >= 1024*1024)      tamanho = sprintf("%.2f MB", bytes/1024/1024)
-      else if (bytes >= 1024)           tamanho = sprintf("%.2f KB", bytes/1024)
-      else                              tamanho = sprintf("%d B", bytes)
+      # Negative bytes is the `--shallow` marker: directories rendered as
+      # `-` and not counted toward the displayed total. See ADR-0007.
+      if (bytes < 0) {
+        tamanho = "-"
+      } else {
+        total_bytes += bytes
+        if (bytes >= 1024*1024*1024)      tamanho = sprintf("%.2f GB", bytes/1024/1024/1024)
+        else if (bytes >= 1024*1024)      tamanho = sprintf("%.2f MB", bytes/1024/1024)
+        else if (bytes >= 1024)           tamanho = sprintf("%.2f KB", bytes/1024)
+        else                              tamanho = sprintf("%d B", bytes)
+      }
 
       printf "%s%s%s%s%s%s%s\n", kind, sep, nome, sep, data, sep, tamanho
       linhas++
@@ -493,8 +563,9 @@ if [[ "$TERM_WIDTH" -ge "$MIN_WIDTH_3COL" ]]; then
   print_card_line_3 "$(pad_label "$(t shown)"   "$CARD_C1_LABEL_W") : $EXIBIDOS"             "--sort [time|name|size]" "$(pad_label "$(t sort)"  "$CARD_C3_LABEL_W") : $SORT_BY"            "$CARD_INNER_WIDTH"
   print_card_line_3 "$(pad_label "$(t items)"   "$CARD_C1_LABEL_W") : $TOTAL_ITENS"          "--top N"                 "$(pad_label "$(t top)"   "$CARD_C3_LABEL_W") : ${TOP_N:-$(t all)}" "$CARD_INNER_WIDTH"
   print_card_line_3 "$(pad_label "$(t files)"   "$CARD_C1_LABEL_W") : $TOTAL_ARQUIVOS"       "--no-hidden"             "$(pad_label "$(t color)" "$CARD_C3_LABEL_W") : $(color_label)"    "$CARD_INNER_WIDTH"
-  print_card_line_3 "$(pad_label "$(t folders)" "$CARD_C1_LABEL_W") : $TOTAL_PASTAS"         "--no-color"              ""                                                                "$CARD_INNER_WIDTH"
-  print_card_line_3 "$(pad_label "$(t size)"    "$CARD_C1_LABEL_W") : $TOTAL_EXIBIDO_HUMAN"  "--lang en|pt|es"         ""                                                                "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(pad_label "$(t folders)" "$CARD_C1_LABEL_W") : $TOTAL_PASTAS"         "--shallow"               ""                                                                "$CARD_INNER_WIDTH"
+  print_card_line_3 "$(pad_label "$(t size)"    "$CARD_C1_LABEL_W") : $TOTAL_EXIBIDO_HUMAN"  "--no-color"              ""                                                                "$CARD_INNER_WIDTH"
+  print_card_line_3 ""                                                                       "--lang en|pt|es"         ""                                                                "$CARD_INNER_WIDTH"
 
   printf "%b%s%b  %b%s%b  %b%s%b\n\n" \
     "$CARD_BORDER_COLOR" "$CARD_BORDER" "$C_RESET" \
@@ -512,6 +583,7 @@ else
   printf "  --sort [time|name|size]\n"
   printf "  --top N\n"
   printf "  --no-hidden\n"
+  printf "  --shallow\n"
   printf "  --no-color\n"
   printf "  --lang en|pt|es\n\n"
 

@@ -19,7 +19,7 @@ and `column`, and avoid carrying a heavy runtime.
 
 ## What
 
-`lsm [PATH] [--sort time|name|size] [--top N] [--no-hidden] [--no-color] [--lang en|pt|es]`
+`lsm [PATH] [--sort time|name|size] [--top N] [--no-hidden] [--shallow] [--no-color] [--lang en|pt|es]`
 
 From the user's perspective:
 
@@ -75,6 +75,21 @@ From the user's perspective:
   `filename` in the file color, `folder/` in the directory color, and `.hidden` in the
   hidden-entry gray. The legend is suppressed under `--no-color` because the swatch
   words rely on ANSI to carry signal.
+- **AC-1i** (parallel directory sizing): The recursive directory sizes from AC-1 / AC-1f
+  are computed in parallel via `xargs -0 -P <N>` (one `du -sb` per subdirectory). The
+  parallelism level defaults to `min(nproc, 8)` (or `min(sysctl -n hw.ncpu, 8)` on
+  macOS) and can be overridden via the `LSM_JOBS` environment variable. Parallelism
+  must not affect the rendered output — the final table order is decided by the
+  active `--sort` key, applied after all sizes are joined back to the metadata records.
+- **AC-1j** (`--shallow` flag): Given any directory, when the user runs `lsm --shallow`,
+  then no `du -sb` is invoked. Directory rows render `-` in the `SIZE` column and
+  contribute `0` bytes to the summary card's `Size` total. Use this on directories
+  where the user does not need recursive sizes (e.g., `~/`, `~/.cache`, `/`) and
+  wants the listing to be near-instant.
+- **AC-1k** (`--shallow` + `--sort size`): When `--shallow` is active, every directory
+  reports `0` bytes for sort purposes and therefore falls to the bottom of a
+  `--sort size` listing (after the files, which keep their real sizes). This mirrors
+  the pre-v0.2.0 ordering. No error is raised when the two flags are combined.
 - **AC-1h** (footer): The output always ends with a closing footer mirroring the header:
   a horizontal divider, a recap line of the form
   `lsm · <Shown>: N · <Size>: X · <Sort>: Y · <end of listing>`, and a second divider.

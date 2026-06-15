@@ -139,6 +139,34 @@ user just saw in the table. Labels are i18n-aware.
 
 **Related.** summary card, top-N, message table.
 
+## Shallow mode
+
+**Definition.** The mode enabled by the `--shallow` flag (since v0.3.0)
+that skips the recursive `du -sb` pass over subdirectories. Directory
+rows render `-` in the `SIZE` column (matching v0.1.0) and contribute
+`0` bytes to the summary `Size` total. Use it on directories where the
+recursive size is not worth waiting for — `~/`, `~/.cache`, `/`, `/var`
+— and the listing should be near-instant. See ADR-0007.
+
+**Example.** `lsm --shallow ~` on a home directory with a heavy `.cache`
+returns in milliseconds instead of seconds.
+
+**Related.** recursive directory size, summary card.
+
+## Parallelism level
+
+**Definition.** The number of concurrent `du -sb` workers used to
+compute recursive directory sizes (since v0.3.0). Defaults to
+`min(nproc, 8)` on Linux and `min(sysctl -n hw.ncpu, 8)` on macOS.
+Overridden via the `LSM_JOBS` environment variable
+(e.g., `LSM_JOBS=16 lsm ~`). The cap exists because past ~8 workers the
+bottleneck shifts from CPU to filesystem stat IO and more workers stop
+helping (and start hurting on spinning rust). See ADR-0007.
+
+**Example.** `LSM_JOBS=4 lsm ~`
+
+**Related.** recursive directory size, shallow mode.
+
 ## Hidden entry
 
 **Definition.** Any file or directory whose name starts with a `.` (dot).

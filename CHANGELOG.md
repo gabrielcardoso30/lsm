@@ -27,6 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **i18n keys** for the legend and footer in all three languages:
   `legend`, `legend_file`, `legend_directory`, `legend_hidden`,
   `footer_end`. See AC-16h.
+- **`--shallow` flag** — skips the recursive `du -sb` pass entirely.
+  Directory rows render `-` for SIZE and contribute 0 bytes to the
+  summary `Size` total. Designed for `lsm ~`, `lsm /`, or any directory
+  where the recursive size is not worth waiting for. See AC-1j, AC-1k
+  and `docs/adr/0007-parallel-du-and-shallow-flag.md`.
+- **`LSM_JOBS` environment variable** — overrides the parallelism level
+  for the directory `du -sb` pass. Defaults to `min(nproc, 8)` on Linux
+  and `min(sysctl -n hw.ncpu, 8)` on macOS. See AC-1i.
 
 ### Changed
 
@@ -41,7 +49,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/adr/0006-show-hidden-by-default.md`. To restore the v0.2.x
   behavior, pass `--no-hidden`.
 - The "Available flags" summary card now advertises `--no-hidden` instead
-  of `--all / -a`.
+  of `--all / -a`. `--shallow` is added as a sixth flag entry.
+- **Parallelized directory sizing.** The recursive `du -sb` pass that
+  computes per-directory sizes now runs in parallel via
+  `xargs -0 -n1 -P "$JOBS"`. On a `~/` listing with ~1.5M files across 80
+  top-level subdirectories the wallclock drops from ~4.8 s (sequential)
+  to ~1.9 s (8 workers, the default cap). No UX change — output is
+  identical to the sequential path. See AC-1i and ADR-0007.
 
 ### Deprecated
 
@@ -52,11 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 
 - New ADR-0006 ("Show hidden entries by default and dim them in gray").
+- New ADR-0007 ("Parallelize directory sizing and add `--shallow`
+  opt-out").
 - Spec updated: AC-12 / AC-13 rewritten, AC-12b and AC-13b added, OQ-2
   revised. AC-1g (legend), AC-1h (footer) and AC-16h (legend + footer
   i18n) added.
-- Glossary expanded with the *hidden entry*, *color legend*, and *footer*
-  terms.
+- Glossary expanded with the *hidden entry*, *color legend*, *footer*,
+  *shallow mode*, and *parallelism level* terms.
 
 ## [0.2.1] — 2026-06-14
 

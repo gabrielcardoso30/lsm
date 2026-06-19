@@ -72,7 +72,8 @@ teardown() { cleanup_fixture; }
 }
 
 @test "AC-16h: legend + footer follow LSM_LANG=pt" {
-  COLUMNS=140 LSM_LANG=pt LANG=C.UTF-8 run "$LSM_BIN" "$FIXTURE_DIR"
+  COLUMNS=140 LSM_LANG=pt LANG=C.UTF-8 COLORFGBG="" LSM_THEME="dark" LSM_BG_RGB="" \
+    run "$LSM_BIN" --color always "$FIXTURE_DIR"
 
   [ "$status" -eq 0 ]
   local plain
@@ -85,7 +86,8 @@ teardown() { cleanup_fixture; }
 }
 
 @test "AC-16h: legend + footer follow LSM_LANG=es" {
-  COLUMNS=140 LSM_LANG=es LANG=C.UTF-8 run "$LSM_BIN" "$FIXTURE_DIR"
+  COLUMNS=140 LSM_LANG=es LANG=C.UTF-8 COLORFGBG="" LSM_THEME="dark" LSM_BG_RGB="" \
+    run "$LSM_BIN" --color always "$FIXTURE_DIR"
 
   [ "$status" -eq 0 ]
   local plain

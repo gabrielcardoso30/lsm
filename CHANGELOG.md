@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Adaptive color theme** — `lsm` now detects the terminal background and
+  renders a `light` or `dark` palette accordingly, so the default listing is
+  legible on light terminals instead of washing out / painting dark
+  rectangles. Detection is by perceived luminance (not hue), so tinted
+  backgrounds resolve correctly (Ubuntu aubergine, Catppuccin, Solarized).
+  See `docs/adr/0008-adaptive-color-theme.md` and AC-24..AC-30.
+- **`--theme dark|light|auto` flag (+ `LSM_THEME` env)** — forces a palette or
+  leaves it on `auto` (the default). Precedence:
+  `--theme` > `LSM_THEME` > auto-detection > dark fallback.
+- **`--color always|auto|never` flag** — `auto` (default) emits ANSI only on a
+  TTY; `always` forces it (e.g. `lsm | less -R`); `never` disables it.
+- **`LSM_BG_RGB` env** — overrides background detection with an explicit
+  `#RRGGBB` color (escape hatch for terminals where probing fails).
+- **`theme` i18n key** in all three languages (`Theme` / `Tema` / `Tema`); the
+  summary cards now list `--theme` / `--color` and report the resolved theme.
+
+### Changed
+
+- **Color now auto-disables when stdout is not a TTY** (default
+  `--color auto`). `lsm > file` and `lsm | cmd` are escape-free unless
+  `--color always` is passed. `--no-color` is retained as an alias for
+  `--color never`.
+
 ## [0.3.0] — 2026-06-15
 
 ### Fixed

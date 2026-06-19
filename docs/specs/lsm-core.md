@@ -130,6 +130,12 @@ From the user's perspective:
 - **AC-11**: Given a terminal narrower than the 3-card threshold (`tput cols < 110`), when the
   user runs `lsm`, then the summary falls back to a stacked text layout that fits within 80
   columns.
+- **Adaptive color theme (AC-22..AC-32)**: background detection, the dark/light
+  palettes, and the `--theme` / `--color` flags extend this section. The dark
+  palette is frozen at its v0.3.x values (AC-24); the hidden-entry gray of
+  AC-12b becomes theme-aware (AC-30). Full criteria live in
+  `docs/specs/adaptive-color-theme.md`; rationale in
+  `docs/adr/0008-adaptive-color-theme.md`.
 
 ### Hidden entries
 

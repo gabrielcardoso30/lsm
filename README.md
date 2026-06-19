@@ -19,8 +19,10 @@ to install — just `bash`, `awk`, `find`, and `column`.
 | Shown    : 6                   |  | --sort [time|name|size]        |  | Sort  : time                   |
 | Items    : 12                  |  | --top N                        |  | Top   : 6                      |
 | Files    : 7                   |  | --no-hidden                    |  | Color : on                     |
-| Folders  : 5                   |  | --no-color                     |  |                                |
-| Size     : 8.51 KB             |  | --lang en|pt|es                |  |                                |
+| Folders  : 5                   |  | --shallow                      |  | Theme : dark                   |
+| Size     : 8.51 KB             |  | --theme dark|light|auto        |  |                                |
+|                                |  | --color always|auto|never      |  |                                |
+|                                |  | --lang en|pt|es                |  |                                |
 +--------------------------------+  +--------------------------------+  +--------------------------------+
 
 Legend:  filename  folder/  .hidden
@@ -104,9 +106,12 @@ lsm --sort size              # sort by size (largest first)
 lsm --top 10                 # show only the first 10 rows after sorting
 lsm --no-hidden              # exclude dotfiles and dot-directories
 lsm --shallow ~              # skip recursive `du` — instant on huge dirs
+lsm --theme light            # force the light palette (default is auto-detect)
+lsm --color always | less -R # keep colors when piping
 lsm --no-color               # disable ANSI escapes (CI, pipes, dumb terminals)
 lsm --lang pt                # render labels in Brazilian Portuguese
 LSM_LANG=es lsm              # or via env var (en, pt, es)
+LSM_THEME=light lsm          # force a palette via env var (dark, light)
 LSM_JOBS=4 lsm ~             # tune parallelism for recursive sizing
 lsm /var/log --sort size --top 5 --no-color
 ```
@@ -117,7 +122,9 @@ lsm /var/log --sort size --top 5 --no-color
 | `--top` | positive integer | unset | Truncate the table to the first N rows. |
 | `--no-hidden` | — | off | Exclude dotfiles and dot-directories. Hidden entries are **shown by default since v0.3.0** and rendered in dim gray. |
 | `--shallow` | — | off | Skip the recursive `du -sb` pass. Directory `SIZE` renders as `-` and dirs contribute 0 to `Size`. Near-instant on `~/`, `~/.cache`, `/`. |
-| `--no-color` | — | colors on | Disable ANSI color output. |
+| `--theme` | `dark` \| `light` \| `auto` | `auto` | Color palette. `auto` detects the terminal background (see [Theming](#theming)). Also via `LSM_THEME`. |
+| `--color` | `always` \| `auto` \| `never` | `auto` | When to emit ANSI. `auto` = only on a TTY; `always` forces it; `never` = `--no-color`. |
+| `--no-color` | — | colors on | Alias for `--color never`. |
 | `--lang` | `en` \| `pt` \| `es` | auto | Override language detection. |
 
 ### Performance
@@ -146,6 +153,37 @@ Portuguese, and Spanish. Language is selected with the following precedence:
 Unsupported codes (e.g., `LSM_LANG=de`) silently fall back to English — no
 error. Want to add a new language? See `docs/adr/0003-i18n-with-message-tables.md`
 and send a PR that adds a `MSG_<XX>` table to `lsm`.
+
+## Theming
+
+`lsm` ships two palettes — `dark` (light pastels on dark fills, the original
+look) and `light` (dark foregrounds on light fills) — and picks one
+automatically so the listing is legible on light and dark terminals alike.
+
+Theme is resolved with this precedence:
+
+1. `--theme dark|light` (highest)
+2. `LSM_THEME` environment variable
+3. Auto-detection: `LSM_BG_RGB` → `COLORFGBG` → an OSC 11 background query
+4. `dark` (fallback)
+
+Auto-detection classifies the background by **perceived luminance, not hue**,
+so tinted backgrounds are handled correctly — Ubuntu's aubergine, Catppuccin,
+and Solarized Dark all resolve to `dark`; Solarized Light resolves to `light`.
+
+If your terminal does not answer the OSC 11 query (the dark fallback then
+kicks in) you can pin the theme explicitly:
+
+```bash
+lsm --theme light            # per invocation
+LSM_THEME=light lsm          # per shell/session
+LSM_BG_RGB=#1e1e2e lsm       # or tell lsm your exact background color
+```
+
+The OSC 11 probe is best-effort and safe: it runs only against the controlling
+terminal with a ~0.2 s timeout, restores terminal state even on Ctrl-C, and
+never leaks bytes to the output. See
+`docs/adr/0008-adaptive-color-theme.md`.
 
 ## How is this different from `eza` / `lsd` / `exa`?
 

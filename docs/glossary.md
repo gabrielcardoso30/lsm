@@ -182,3 +182,54 @@ entirely from the table and from the summary totals. The legacy `--all` /
 
 **Related.** summary card, directory marker.
 
+## Theme
+
+**Definition.** The palette `lsm` renders with: `dark` (light pastel
+foregrounds on dark background fills — the original look) or `light` (dark
+foregrounds on light background fills). Selected via `--theme dark|light|auto`
+or the `LSM_THEME` environment variable; `auto` (the default) detects the
+terminal background. Precedence: `--theme` > `LSM_THEME` > auto-detection >
+dark fallback. See `docs/adr/0008-adaptive-color-theme.md`.
+
+**Example.** `lsm --theme light` or `LSM_THEME=light lsm`
+
+**Related.** palette, luminance detection, color mode.
+
+## Palette
+
+**Definition.** The concrete set of ANSI color codes a theme maps each output
+role to (directory, file, date, size, hidden entry, card borders, zebra
+stripe, etc.). `lsm` ships exactly two palettes — dark and light — kept in
+role-for-role correspondence. The dark palette is frozen at its v0.3.x values
+so dark terminals never regress (AC-24).
+
+**Example.** Dark zebra stripe `48;5;236`; light zebra stripe `48;5;254`.
+
+**Related.** theme, summary card.
+
+## Luminance detection
+
+**Definition.** The hue-agnostic method `lsm` uses to classify a terminal
+background as light or dark: perceived luminance
+`0.2126·R + 0.7152·G + 0.0722·B` over 0–255 channels, classified `light` when
+above 127. Driven by a background color obtained from `LSM_BG_RGB`, then
+`COLORFGBG`, then an OSC 11 query, falling back to dark. Because it measures
+luminance rather than hue, tinted backgrounds classify correctly: Ubuntu's
+aubergine `#300A24` and Catppuccin Mocha `#1E1E2E` are dark; Solarized Light
+`#FDF6E3` is light. See AC-28b.
+
+**Example.** `LSM_BG_RGB=#300A24 lsm` resolves to the dark theme.
+
+**Related.** theme, palette, color mode.
+
+## Color mode
+
+**Definition.** Whether `lsm` emits ANSI escapes, set via
+`--color always|auto|never`. `auto` (the default) emits color only when stdout
+is a terminal, so `lsm > file` and `lsm | cmd` stay escape-free; `always`
+forces color (e.g. for `lsm | less -R`); `never` disables it and is the
+canonical form of the retained `--no-color` alias. See AC-22, AC-23.
+
+**Example.** `lsm --color always | less -R`
+
+**Related.** theme, palette.

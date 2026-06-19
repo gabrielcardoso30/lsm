@@ -57,8 +57,22 @@ cleanup_fixture() {
 #   locale to English/C.UTF-8 so assertions against the rendered labels
 #   ("Files", "Folders", "Size", "Shown", "Legend:", etc.) are reproducible
 #   regardless of the developer's shell `$LANG` or the CI runner default.
+#
+#   Color is forced on via `--color always` because bats captures output
+#   through a pipe (not a TTY), and the default `--color auto` would otherwise
+#   suppress color — breaking the many assertions that expect ANSI. The flag is
+#   passed BEFORE "$@" so callers that append `--no-color` / `--color never`
+#   still win (color mode is last-occurrence-wins). The theme is pinned to dark
+#   via `LSM_THEME=dark`: this both makes the existing dark-palette assertions
+#   deterministic AND short-circuits the OSC 11 background probe, which would
+#   otherwise query the developer's real terminal (bats inherits the controlling
+#   tty) and could resolve to light on a light terminal. COLORFGBG / LSM_BG_RGB
+#   are cleared defensively. Tests that exercise light/auto detection set these
+#   explicitly and bypass this helper.
 #   Tests that want to exercise pt/es i18n do NOT use this helper and call
 #   `run "$LSM_BIN"` directly with their own LSM_LANG.
 lsm_run() {
-  COLUMNS=140 LSM_LANG="" LANG=C.UTF-8 LC_ALL=C.UTF-8 run "$LSM_BIN" "$@"
+  COLUMNS=140 LSM_LANG="" LANG=C.UTF-8 LC_ALL=C.UTF-8 \
+    COLORFGBG="" LSM_THEME="dark" LSM_BG_RGB="" \
+    run "$LSM_BIN" --color always "$@"
 }
